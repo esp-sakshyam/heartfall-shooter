@@ -21,6 +21,7 @@ const sensitivityInput = document.getElementById("sensitivity");
 const bloomInput = document.getElementById("bloom");
 const touchInput = document.getElementById("touch");
 const difficultyInput = document.getElementById("difficulty");
+const gyroInput = document.getElementById("gyro");
 const touchControls = document.getElementById("touchControls");
 const leftPad = document.getElementById("leftPad");
 const rightPad = document.getElementById("rightPad");
@@ -109,7 +110,9 @@ const game = {
   levelIndex: 0,
   killsThisLevel: 0,
   killsNeeded: 10,
-  levelPopupTimer: 0
+  levelPopupTimer: 0,
+  fxScale: 1,
+  botMultiplier: 1
 };
 
 const levelDefs = [
@@ -163,6 +166,13 @@ const touchState = {
   lookY: 0,
   firing: false,
   jumping: false
+};
+
+const gyroState = {
+  enabled: false,
+  supported: "DeviceOrientationEvent" in window,
+  lookX: 0,
+  lookY: 0
 };
 
 const mouseDelta = { x: 0, y: 0 };
@@ -696,7 +706,8 @@ function setLevel(index) {
   const cfg = levelDefs[Math.min(index, levelDefs.length - 1)];
   game.killsThisLevel = 0;
   game.killsNeeded = cfg.kills;
-  spawnBots(cfg.botCount, cfg);
+  const scaledBots = Math.max(2, Math.round(cfg.botCount * game.botMultiplier));
+  spawnBots(scaledBots, cfg);
   if (levelInfoEl) {
     levelInfoEl.textContent = `LEVEL ${index + 1} / ${cfg.name.toUpperCase()} (0/${cfg.kills})`;
   }
@@ -714,7 +725,8 @@ function advanceLevel() {
     game.killsThisLevel = 0;
     game.killsNeeded += 10;
     const cfg = levelDefs[levelDefs.length - 1];
-    spawnBots(cfg.botCount + 2, cfg);
+    const scaledBots = Math.max(3, Math.round((cfg.botCount + 2) * game.botMultiplier));
+    spawnBots(scaledBots, cfg);
     addFeed("Hard+ engaged. More bots inbound.", "#ff9a9a");
   }
 }
@@ -756,11 +768,45 @@ function applySettings() {
   ssaoPass.enabled = p.ssao;
   bloomPass.enabled = p.bloom && bloomInput.checked;
 
+  game.fxScale = game.quality === "mobile" ? 0.5 : game.quality === "medium" ? 0.7 : 1;
+  game.botMultiplier = game.quality === "mobile" ? 0.7 : game.quality === "medium" ? 0.85 : 1;
+
+  if (gyroInput) {
+    toggleGyro(gyroInput.checked);
+  }
+
   touchControls.classList.toggle("hidden", !touchState.enabled);
 
   const chosenLevel = Number(difficultyInput?.value ?? game.levelIndex);
   setLevel(Number.isFinite(chosenLevel) ? chosenLevel : 0);
   onResize();
+}
+
+function onGyro(e) {
+  if (!gyroState.enabled) return;
+  const gamma = e.gamma ?? 0;
+  const beta = e.beta ?? 0;
+  const yaw = clamp(gamma / 45, -1, 1);
+  const pitch = clamp(beta / 45, -1, 1);
+  gyroState.lookX = yaw * 1.2;
+  gyroState.lookY = pitch * 1.0;
+}
+
+async function toggleGyro(enable) {
+  if (!gyroState.supported) return;
+  if (enable) {
+    if (typeof DeviceOrientationEvent?.requestPermission === "function") {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res !== "granted") return;
+    }
+    gyroState.enabled = true;
+    window.addEventListener("deviceorientation", onGyro, true);
+  } else {
+    gyroState.enabled = false;
+    gyroState.lookX = 0;
+    gyroState.lookY = 0;
+    window.removeEventListener("deviceorientation", onGyro, true);
+  }
 }
 
 function setPanel(panel, open) {
@@ -935,17 +981,20 @@ function setupUI() {
   settingsBtn.addEventListener("click", () => {
     setPanel(menuPanel, false);
     setPanel(settingsPanel, true);
+    touchControls.classList.add("hidden");
   });
 
   backBtn.addEventListener("click", () => {
     setPanel(settingsPanel, false);
     setPanel(menuPanel, true);
+    touchControls.classList.toggle("hidden", !touchState.enabled);
   });
 
   applySettingsBtn.addEventListener("click", () => {
     applySettings();
     setPanel(settingsPanel, false);
     setPanel(menuPanel, true);
+    touchControls.classList.toggle("hidden", !touchState.enabled);
   });
 
   startBtn.addEventListener("click", () => {
@@ -964,6 +1013,10 @@ function setupUI() {
 
   levelContinueBtn?.addEventListener("click", () => {
     hideLevelComplete();
+  });
+
+  gyroInput?.addEventListener("change", (e) => {
+    toggleGyro(e.target.checked);
   });
 }
 
@@ -996,10 +1049,11 @@ function spawnTracer(origin, direction, length, color) {
 }
 
 function spawnParticles(point, color = 0xffa855, count = 18) {
+  const scaledCount = Math.max(6, Math.round(count * game.fxScale));
   const geo = new THREE.BufferGeometry();
-  const arr = new Float32Array(count * 3);
+  const arr = new Float32Array(scaledCount * 3);
   const vel = [];
-  for (let i = 0; i < count; i += 1) {
+  for (let i = 0; i < scaledCount; i += 1) {
     arr[i * 3] = point.x;
     arr[i * 3 + 1] = point.y;
     arr[i * 3 + 2] = point.z;
@@ -1231,6 +1285,11 @@ function updatePlayer(dt) {
     modeEl.textContent = `${player.thirdPerson ? "Third" : "First"} Person + Controller`;
   } else {
     modeEl.textContent = `${player.thirdPerson ? "Third" : "First"} Person Tactical`;
+  }
+
+  if (gyroState.enabled) {
+    lookX += gyroState.lookX;
+    lookY += gyroState.lookY;
   }
 
   player.yaw -= (mouseDelta.x * 0.001 + lookX * 0.048) * player.sensitivity;

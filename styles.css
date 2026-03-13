@@ -293,7 +293,7 @@ html, body {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
-  z-index: 8;
+  z-index: 12;
 }
 
 .panel.open {
