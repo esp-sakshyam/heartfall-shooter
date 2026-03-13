@@ -333,6 +333,12 @@ html, body {
   margin-bottom: 16px;
 }
 
+.menu-selects {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 /* Key hints bar */
 .key-hints {
   display: flex;

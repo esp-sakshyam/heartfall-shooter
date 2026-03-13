@@ -116,6 +116,23 @@
           Tactical bot warfare inspired by CS2 positioning and recoil discipline.<br/>
           A fractured heart forged the deadliest third-person tactician.
         </p>
+        <div class="menu-selects">
+          <label class="field">
+            Weather
+            <select id="menuWeather">
+              <option value="clear" selected>Clear Day</option>
+              <option value="cloudy">Cloudy</option>
+              <option value="rain">Rain</option>
+            </select>
+          </label>
+          <label class="field">
+            Map
+            <select id="menuMap">
+              <option value="city" selected>Heartfall City</option>
+              <option value="outpost">Desert Outpost</option>
+            </select>
+          </label>
+        </div>
         <div class="key-hints">
           <span>WASD – Move</span>
           <span>Mouse – Aim</span>
@@ -157,8 +174,8 @@
         </label>
 
         <label class="field">
-          Resolution Scale &nbsp;<span id="resLabel">1.0×</span>
-          <input id="resolution" type="range" min="0.4" max="1.5" step="0.05" value="1" />
+          Resolution Scale &nbsp;<span id="resLabel">0.65×</span>
+          <input id="resolution" type="range" min="0.4" max="1.5" step="0.05" value="0.65" />
         </label>
 
         <label class="field">
@@ -171,7 +188,7 @@
           <span>Bloom / Glow Effect</span>
         </label>
         <label class="toggle">
-          <input id="touch" type="checkbox" />
+          <input id="touch" type="checkbox" checked />
           <span>Force Touch Controls</span>
         </label>
         <label class="toggle">
