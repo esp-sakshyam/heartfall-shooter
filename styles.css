@@ -448,12 +448,16 @@ button:hover  { filter: brightness(1.12); }
 #touchControls {
   position: absolute;
   pointer-events: auto;
-  inset: auto 0 8px 0;
+  inset: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   align-items: end;
   padding: 10px 16px;
   z-index: 5;
+}
+
+#touchControls .pad {
+  display: none;
 }
 
 .pad {

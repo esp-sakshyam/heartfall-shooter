@@ -178,9 +178,18 @@ const gyroState = {
   supported: "DeviceOrientationEvent" in window,
   lookX: 0,
   lookY: 0,
+  targetX: 0,
+  targetY: 0,
   baseGamma: 0,
   baseBeta: 0,
   hasBase: false
+};
+
+const touchZones = {
+  leftId: null,
+  rightId: null,
+  leftStart: { x: 0, y: 0 },
+  rightStart: { x: 0, y: 0 }
 };
 
 const mouseDelta = { x: 0, y: 0 };
@@ -792,6 +801,7 @@ function applySettings() {
   }
 
   touchControls.classList.toggle("hidden", !touchState.enabled);
+  touchControls.classList.toggle("split", touchState.enabled);
 
   const chosenLevel = Number(difficultyInput?.value ?? game.levelIndex);
   setLevel(Number.isFinite(chosenLevel) ? chosenLevel : 0);
@@ -810,16 +820,23 @@ function onGyro(e) {
   }
   const relGamma = gamma - gyroState.baseGamma;
   const relBeta = beta - gyroState.baseBeta;
-  const yaw = clamp(relGamma / 35, -1, 1);
-  const pitch = clamp(relBeta / 35, -1, 1);
-  gyroState.lookX = lerp(gyroState.lookX, yaw * 1.4, 0.25);
-  gyroState.lookY = lerp(gyroState.lookY, pitch * 1.2, 0.25);
+  const yaw = clamp(relGamma / 45, -1, 1);
+  const pitch = clamp(relBeta / 45, -1, 1);
+  const dz = 0.06;
+  const yawOut = Math.abs(yaw) < dz ? 0 : yaw;
+  const pitchOut = Math.abs(pitch) < dz ? 0 : pitch;
+  gyroState.targetX = yawOut * 0.9;
+  gyroState.targetY = pitchOut * 0.75;
 }
 
 async function toggleGyro(enable) {
   if (!gyroState.supported) return;
   if (enable) {
     gyroState.hasBase = false;
+    gyroState.lookX = 0;
+    gyroState.lookY = 0;
+    gyroState.targetX = 0;
+    gyroState.targetY = 0;
     if (typeof DeviceOrientationEvent?.requestPermission === "function") {
       const res = await DeviceOrientationEvent.requestPermission();
       if (res !== "granted") return;
@@ -956,9 +973,64 @@ function setupInput() {
     touchState.firing = false;
   });
 
+  const touchMax = 90;
+  function resetTouchZone(id) {
+    if (touchZones.leftId === id) {
+      touchZones.leftId = null;
+      touchState.moveX = 0;
+      touchState.moveY = 0;
+    }
+    if (touchZones.rightId === id) {
+      touchZones.rightId = null;
+      touchState.lookX = 0;
+      touchState.lookY = 0;
+    }
+  }
+
+  window.addEventListener("touchstart", (e) => {
+    if (!touchState.enabled) return;
+    const half = window.innerWidth / 2;
+    for (const t of e.changedTouches) {
+      if (t.clientX < half && touchZones.leftId === null) {
+        touchZones.leftId = t.identifier;
+        touchZones.leftStart.x = t.clientX;
+        touchZones.leftStart.y = t.clientY;
+      } else if (t.clientX >= half && touchZones.rightId === null) {
+        touchZones.rightId = t.identifier;
+        touchZones.rightStart.x = t.clientX;
+        touchZones.rightStart.y = t.clientY;
+      }
+    }
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (e) => {
+    if (!touchState.enabled) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchZones.leftId) {
+        const dx = clamp((t.clientX - touchZones.leftStart.x) / touchMax, -1, 1);
+        const dy = clamp((touchZones.leftStart.y - t.clientY) / touchMax, -1, 1);
+        touchState.moveX = dx;
+        touchState.moveY = dy;
+      }
+      if (t.identifier === touchZones.rightId) {
+        const dx = clamp((t.clientX - touchZones.rightStart.x) / touchMax, -1, 1);
+        const dy = clamp((touchZones.rightStart.y - t.clientY) / touchMax, -1, 1);
+        touchState.lookX = dx;
+        touchState.lookY = dy;
+      }
+    }
+  }, { passive: true });
+
+  window.addEventListener("touchend", (e) => {
+    for (const t of e.changedTouches) resetTouchZone(t.identifier);
+  });
+  window.addEventListener("touchcancel", (e) => {
+    for (const t of e.changedTouches) resetTouchZone(t.identifier);
+  });
+
   setupTouchPad(leftPad, (x, y) => {
     touchState.moveX = x;
-    touchState.moveY = y;
+    touchState.moveY = -y;
   });
   setupTouchPad(rightPad, (x, y) => {
     touchState.lookX = x;
@@ -1294,7 +1366,7 @@ function updatePlayer(dt) {
     const mx = Math.abs(touchState.moveX) < dz ? 0 : touchState.moveX;
     const my = Math.abs(touchState.moveY) < dz ? 0 : touchState.moveY;
     moveX += mx;
-    moveZ -= my;
+    moveZ += my;
     lookX += touchState.lookX * 2.1;
     lookY += touchState.lookY * 2.1;
     shoot = shoot || touchState.firing;
@@ -1316,6 +1388,8 @@ function updatePlayer(dt) {
   }
 
   if (gyroState.enabled) {
+    gyroState.lookX = lerp(gyroState.lookX, gyroState.targetX, 0.12);
+    gyroState.lookY = lerp(gyroState.lookY, gyroState.targetY, 0.12);
     lookX += gyroState.lookX;
     lookY += gyroState.lookY;
   }
