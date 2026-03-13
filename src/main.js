@@ -112,7 +112,12 @@ const game = {
   killsNeeded: 10,
   levelPopupTimer: 0,
   fxScale: 1,
-  botMultiplier: 1
+  botMultiplier: 1,
+  usePost: true,
+  basePixelRatio: 1,
+  dynamicScale: 1,
+  fpsAvg: 60,
+  perfTimer: 0
 };
 
 const levelDefs = [
@@ -172,13 +177,20 @@ const gyroState = {
   enabled: false,
   supported: "DeviceOrientationEvent" in window,
   lookX: 0,
-  lookY: 0
+  lookY: 0,
+  baseGamma: 0,
+  baseBeta: 0,
+  hasBase: false
 };
 
 const mouseDelta = { x: 0, y: 0 };
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
 function setHealthBars() {
@@ -759,17 +771,21 @@ function applySettings() {
   touchState.force = touchInput.checked;
   touchState.enabled = shouldUseTouch();
 
-  renderer.setPixelRatio(clamp(window.devicePixelRatio * p.pixelRatio * Number(resolutionInput.value), 0.55, 2.4));
+  game.usePost = game.quality !== "mobile";
+  game.dynamicScale = game.quality === "mobile" ? 0.75 : 1;
+  game.basePixelRatio = clamp(window.devicePixelRatio * p.pixelRatio * Number(resolutionInput.value), 0.55, 2.4);
+  renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
   renderer.shadowMap.enabled = p.shadows;
 
   const sun = scene.children.find((c) => c.isDirectionalLight);
   if (sun) sun.shadow.mapSize.set(p.shadowMap, p.shadowMap);
 
-  ssaoPass.enabled = p.ssao;
-  bloomPass.enabled = p.bloom && bloomInput.checked;
+  ssaoPass.enabled = p.ssao && game.usePost;
+  bloomPass.enabled = p.bloom && bloomInput.checked && game.usePost;
+  smaaPass.enabled = game.usePost;
 
-  game.fxScale = game.quality === "mobile" ? 0.5 : game.quality === "medium" ? 0.7 : 1;
-  game.botMultiplier = game.quality === "mobile" ? 0.7 : game.quality === "medium" ? 0.85 : 1;
+  game.fxScale = game.quality === "mobile" ? 0.45 : game.quality === "medium" ? 0.7 : 1;
+  game.botMultiplier = game.quality === "mobile" ? 0.65 : game.quality === "medium" ? 0.85 : 1;
 
   if (gyroInput) {
     toggleGyro(gyroInput.checked);
@@ -786,15 +802,24 @@ function onGyro(e) {
   if (!gyroState.enabled) return;
   const gamma = e.gamma ?? 0;
   const beta = e.beta ?? 0;
-  const yaw = clamp(gamma / 45, -1, 1);
-  const pitch = clamp(beta / 45, -1, 1);
-  gyroState.lookX = yaw * 1.2;
-  gyroState.lookY = pitch * 1.0;
+  if (!gyroState.hasBase) {
+    gyroState.baseGamma = gamma;
+    gyroState.baseBeta = beta;
+    gyroState.hasBase = true;
+    return;
+  }
+  const relGamma = gamma - gyroState.baseGamma;
+  const relBeta = beta - gyroState.baseBeta;
+  const yaw = clamp(relGamma / 35, -1, 1);
+  const pitch = clamp(relBeta / 35, -1, 1);
+  gyroState.lookX = lerp(gyroState.lookX, yaw * 1.4, 0.25);
+  gyroState.lookY = lerp(gyroState.lookY, pitch * 1.2, 0.25);
 }
 
 async function toggleGyro(enable) {
   if (!gyroState.supported) return;
   if (enable) {
+    gyroState.hasBase = false;
     if (typeof DeviceOrientationEvent?.requestPermission === "function") {
       const res = await DeviceOrientationEvent.requestPermission();
       if (res !== "granted") return;
@@ -1265,10 +1290,13 @@ function updatePlayer(dt) {
   if (keys.right) moveX += 1;
 
   if (touchState.enabled) {
-    moveX += touchState.moveX;
-    moveZ -= touchState.moveY;
-    lookX += touchState.lookX * 2.4;
-    lookY += touchState.lookY * 2.4;
+    const dz = 0.08;
+    const mx = Math.abs(touchState.moveX) < dz ? 0 : touchState.moveX;
+    const my = Math.abs(touchState.moveY) < dz ? 0 : touchState.moveY;
+    moveX += mx;
+    moveZ -= my;
+    lookX += touchState.lookX * 2.1;
+    lookY += touchState.lookY * 2.1;
     shoot = shoot || touchState.firing;
     jump = jump || touchState.jumping;
   }
@@ -1542,6 +1570,19 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
 
+  game.fpsAvg = lerp(game.fpsAvg, 1 / Math.max(0.001, dt), 0.05);
+  game.perfTimer += dt;
+  if (game.perfTimer > 0.6 && game.quality === "mobile") {
+    game.perfTimer = 0;
+    if (game.fpsAvg < 52 && game.dynamicScale > 0.6) {
+      game.dynamicScale = Math.max(0.6, game.dynamicScale - 0.05);
+      renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
+    } else if (game.fpsAvg > 58 && game.dynamicScale < 1) {
+      game.dynamicScale = Math.min(1, game.dynamicScale + 0.02);
+      renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
+    }
+  }
+
   if (game.levelPopupTimer > 0) {
     game.levelPopupTimer = Math.max(0, game.levelPopupTimer - dt);
     if (game.levelPopupTimer === 0) {
@@ -1560,7 +1601,11 @@ function animate() {
     touchState.firing = false;
   }
 
-  composer.render();
+  if (game.usePost) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 }
 
 function init() {
