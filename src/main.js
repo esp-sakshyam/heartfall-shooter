@@ -781,8 +781,8 @@ function applySettings() {
   touchState.enabled = shouldUseTouch();
 
   game.usePost = game.quality !== "mobile";
-  game.dynamicScale = game.quality === "mobile" ? 0.75 : 1;
-  game.basePixelRatio = clamp(window.devicePixelRatio * p.pixelRatio * Number(resolutionInput.value), 0.55, 2.4);
+  game.dynamicScale = game.quality === "mobile" ? 0.9 : 1;
+  game.basePixelRatio = clamp(window.devicePixelRatio * p.pixelRatio * Number(resolutionInput.value), 0.7, 2.4);
   renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
   renderer.shadowMap.enabled = p.shadows;
 
@@ -793,8 +793,13 @@ function applySettings() {
   bloomPass.enabled = p.bloom && bloomInput.checked && game.usePost;
   smaaPass.enabled = game.usePost;
 
-  game.fxScale = game.quality === "mobile" ? 0.45 : game.quality === "medium" ? 0.7 : 1;
-  game.botMultiplier = game.quality === "mobile" ? 0.65 : game.quality === "medium" ? 0.85 : 1;
+  game.fxScale = game.quality === "mobile" ? 0.4 : game.quality === "medium" ? 0.7 : 1;
+  game.botMultiplier = game.quality === "mobile" ? 0.6 : game.quality === "medium" ? 0.85 : 1;
+  if (game.quality === "mobile") {
+    scene.fog.density = 0.0085;
+  } else {
+    scene.fog.density = 0.006;
+  }
 
   if (gyroInput) {
     toggleGyro(gyroInput.checked);
@@ -820,13 +825,13 @@ function onGyro(e) {
   }
   const relGamma = gamma - gyroState.baseGamma;
   const relBeta = beta - gyroState.baseBeta;
-  const yaw = clamp(relGamma / 45, -1, 1);
-  const pitch = clamp(relBeta / 45, -1, 1);
-  const dz = 0.06;
+  const yaw = clamp(relGamma / 30, -1, 1);
+  const pitch = clamp(relBeta / 30, -1, 1);
+  const dz = 0.04;
   const yawOut = Math.abs(yaw) < dz ? 0 : yaw;
   const pitchOut = Math.abs(pitch) < dz ? 0 : pitch;
-  gyroState.targetX = yawOut * 0.9;
-  gyroState.targetY = pitchOut * 0.75;
+  gyroState.targetX = yawOut * 1.1;
+  gyroState.targetY = pitchOut * 0.9;
 }
 
 async function toggleGyro(enable) {
@@ -1365,10 +1370,10 @@ function updatePlayer(dt) {
     const dz = 0.08;
     const mx = Math.abs(touchState.moveX) < dz ? 0 : touchState.moveX;
     const my = Math.abs(touchState.moveY) < dz ? 0 : touchState.moveY;
-    moveX += mx;
-    moveZ += my;
+    moveX -= mx;
+    moveZ -= my;
     lookX += touchState.lookX * 2.1;
-    lookY += touchState.lookY * 2.1;
+    lookY -= touchState.lookY * 2.1;
     shoot = shoot || touchState.firing;
     jump = jump || touchState.jumping;
   }
@@ -1388,8 +1393,8 @@ function updatePlayer(dt) {
   }
 
   if (gyroState.enabled) {
-    gyroState.lookX = lerp(gyroState.lookX, gyroState.targetX, 0.12);
-    gyroState.lookY = lerp(gyroState.lookY, gyroState.targetY, 0.12);
+    gyroState.lookX = lerp(gyroState.lookX, gyroState.targetX, 0.35);
+    gyroState.lookY = lerp(gyroState.lookY, gyroState.targetY, 0.35);
     lookX += gyroState.lookX;
     lookY += gyroState.lookY;
   }
@@ -1648,8 +1653,8 @@ function animate() {
   game.perfTimer += dt;
   if (game.perfTimer > 0.6 && game.quality === "mobile") {
     game.perfTimer = 0;
-    if (game.fpsAvg < 52 && game.dynamicScale > 0.6) {
-      game.dynamicScale = Math.max(0.6, game.dynamicScale - 0.05);
+    if (game.fpsAvg < 52 && game.dynamicScale > 0.8) {
+      game.dynamicScale = Math.max(0.8, game.dynamicScale - 0.04);
       renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
     } else if (game.fpsAvg > 58 && game.dynamicScale < 1) {
       game.dynamicScale = Math.min(1, game.dynamicScale + 0.02);
