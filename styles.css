@@ -59,7 +59,7 @@ html, body {
 .vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.68) 100%);
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 56%, rgba(0,0,0,0.36) 100%);
   pointer-events: none;
   z-index: 0;
   transition: opacity 0.3s;
@@ -571,6 +571,18 @@ button:hover  { filter: brightness(1.12); }
   width: 52px; height: 52px;
   background: rgba(40,60,40,0.82);
   font-size: 14px;
+}
+
+.touch-btn.drive {
+  right: 80px;
+  bottom: 260px;
+  width: 86px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(24, 34, 56, 0.88);
+  color: #f4e3c4;
+  font-size: 12px;
+  letter-spacing: 1px;
 }
 
 .mod-toggle {

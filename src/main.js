@@ -30,6 +30,7 @@ const rightPad = document.getElementById("rightPad");
 const shootBtn = document.getElementById("shootBtn");
 const jumpBtn = document.getElementById("jumpBtn");
 const reloadBtn = document.getElementById("reloadBtn");
+const driveBtn = document.getElementById("driveBtn");
 const hpEl = document.getElementById("hp");
 const armorEl = document.getElementById("armor");
 const ammoEl = document.getElementById("ammo");
@@ -127,10 +128,12 @@ const world = {
   nepalFogPatches: [],
   nepalMarkers: [],
   nepalSilhouettes: [],
+  nepalCar: null,
   bellZones: [],
   ambientZones: [],
   bellTimer: 0,
   ambientTimer: 0,
+  nepalMission: null,
   audioCtx: null,
   bellGain: null,
   weather: "clear",
@@ -174,6 +177,7 @@ const game = {
   fpsAvg: 60,
   perfTimer: 0,
   perfMode: "normal",
+  ssaoWanted: true,
   botUpdateAcc: 0,
   botUpdateStep: 1 / 45,
   botLodTick: 0
@@ -207,6 +211,7 @@ const player = {
   recoil: 0,
   sensitivity: 1.2,
   thirdPerson: false,
+  driving: false,
   step: 0
 };
 
@@ -289,6 +294,97 @@ function randomBotSpawn() {
 
 function randomPatrolTarget() {
   return new THREE.Vector3(randCentered(world.patrolX), 1.5, randCentered(world.patrolZ));
+}
+
+function randomSpawnAround(center, radius) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = Math.sqrt(Math.random()) * radius;
+  return new THREE.Vector3(center.x + Math.cos(angle) * dist, 1.5, center.z + Math.sin(angle) * dist);
+}
+
+function buildNepalMissionWaves(levelConfig) {
+  const cfg = levelConfig ?? levelDefs[Math.min(game.levelIndex, levelDefs.length - 1)] ?? levelDefs[0];
+  const base = Math.max(6, Math.round(cfg.botCount * Math.max(0.72, game.botMultiplier)));
+  return [
+    {
+      id: "himalaya",
+      name: "Himalaya Ridge Wave",
+      center: new THREE.Vector3(-360, 1.5, -420),
+      spawnRadius: 95,
+      spawnCount: base + 1,
+      requiredKills: base + 1
+    },
+    {
+      id: "lumbini",
+      name: "Lumbini Wave",
+      center: new THREE.Vector3(-140, 1.5, 170),
+      spawnRadius: 88,
+      spawnCount: base + 2,
+      requiredKills: base + 2
+    },
+    {
+      id: "flag",
+      name: "Flag Plaza Wave",
+      center: new THREE.Vector3(140, 1.5, -160),
+      spawnRadius: 84,
+      spawnCount: base + 3,
+      requiredKills: base + 3
+    }
+  ];
+}
+
+function initNepalMission(levelConfig) {
+  world.nepalMission = {
+    waves: buildNepalMissionWaves(levelConfig),
+    activeWaveIndex: -1,
+    nextWaveIndex: 0,
+    killsInWave: 0,
+    requiredInWave: 0,
+    intermission: 0,
+    complete: false
+  };
+}
+
+function startNepalWave(levelConfig, waveIndex, intermission = 0) {
+  if (!world.nepalMission) return;
+  const wave = world.nepalMission.waves[waveIndex];
+  if (!wave) return;
+  world.nepalMission.activeWaveIndex = waveIndex;
+  world.nepalMission.nextWaveIndex = waveIndex;
+  world.nepalMission.killsInWave = 0;
+  world.nepalMission.requiredInWave = wave.requiredKills;
+  world.nepalMission.intermission = intermission;
+
+  spawnBots(wave.spawnCount, levelConfig, {
+    clearExisting: true,
+    spawnCenter: wave.center,
+    spawnRadius: wave.spawnRadius,
+    patrolCenter: wave.center,
+    patrolRadius: wave.spawnRadius * 1.15,
+    waveId: wave.id,
+    canRespawn: false
+  });
+
+  addFeed(`${wave.name} started`, "#ffd38a");
+  addFeed(`Objective: eliminate ${wave.requiredKills} hostiles`, "#9be0ff");
+}
+
+function updateNepalMission(dt, levelConfig) {
+  if (world.map !== "nepal" || !world.nepalMission || world.nepalMission.complete) return;
+
+  if (world.nepalMission.activeWaveIndex >= 0) return;
+
+  world.nepalMission.intermission = Math.max(0, world.nepalMission.intermission - dt);
+  if (world.nepalMission.intermission > 0) return;
+
+  const nextIndex = world.nepalMission.nextWaveIndex;
+  if (nextIndex < world.nepalMission.waves.length) {
+    startNepalWave(levelConfig, nextIndex, 0);
+    return;
+  }
+
+  world.nepalMission.complete = true;
+  addFeed("Nepal campaign sector secured. Hold this line.", "#9dffb8");
 }
 
 function updateOrientationHint() {
@@ -1470,6 +1566,142 @@ function buildNepalCrowdSilhouettes() {
   world.ambientZones.push({ type: "drum", position: new THREE.Vector3(-220, 1.5, -170), radius: 190 });
 }
 
+function createFallbackSuperCar() {
+  const car = new THREE.Group();
+  const shell = new THREE.Mesh(
+    new THREE.BoxGeometry(3.6, 0.9, 7.2),
+    new THREE.MeshStandardMaterial({ color: 0xbf162e, roughness: 0.28, metalness: 0.72 })
+  );
+  shell.position.y = 1.3;
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 0.65, 3.3),
+    new THREE.MeshStandardMaterial({ color: 0x11141a, roughness: 0.22, metalness: 0.78 })
+  );
+  roof.position.set(0, 1.95, -0.5);
+  const nose = new THREE.Mesh(
+    new THREE.BoxGeometry(3.2, 0.5, 1.8),
+    new THREE.MeshStandardMaterial({ color: 0xca1d3a, roughness: 0.3, metalness: 0.68 })
+  );
+  nose.position.set(0, 1.0, -3.3);
+  car.add(shell, roof, nose);
+
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.85, metalness: 0.1 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xbfc4cc, roughness: 0.35, metalness: 0.82 });
+  const wheels = [];
+  const wheelSpots = [
+    [-1.45, 0.7, -2.35],
+    [1.45, 0.7, -2.35],
+    [-1.45, 0.7, 2.35],
+    [1.45, 0.7, 2.35]
+  ];
+  for (const [x, y, z] of wheelSpots) {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.42, 18), wheelMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(x, y, z);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.43, 12), rimMat);
+    rim.rotation.z = Math.PI / 2;
+    rim.position.copy(wheel.position);
+    car.add(wheel, rim);
+    wheels.push(wheel);
+  }
+
+  car.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return { model: car, wheels };
+}
+
+function buildNepalSuperCar() {
+  const token = world.buildToken;
+  const carRoot = new THREE.Group();
+  carRoot.position.set(95, 0, 18);
+  carRoot.rotation.y = Math.PI;
+  mapGroup.add(carRoot);
+
+  world.nepalCar = {
+    group: carRoot,
+    wheels: [],
+    speed: 0,
+    steer: 0,
+    yaw: carRoot.rotation.y,
+    maxSpeed: 30,
+    accel: 26,
+    brake: 30,
+    drag: 10,
+    turnRate: 1.45,
+    seatOffset: new THREE.Vector3(0, 1.5, -0.25),
+    exitOffset: new THREE.Vector3(2.6, 0, 0),
+    modelReady: false
+  };
+
+  const fallback = () => {
+    if (token !== world.buildToken || !world.nepalCar) return;
+    const built = createFallbackSuperCar();
+    carRoot.add(built.model);
+    world.nepalCar.wheels = built.wheels;
+    world.nepalCar.modelReady = true;
+    addFeed("Supercar loaded (fallback chassis)", "#ffd38a");
+  };
+
+  gltfLoader.load(
+    "https://rawcdn.githack.com/mrdoob/three.js/r165/examples/models/gltf/ferrari.glb",
+    (gltf) => {
+      if (token !== world.buildToken || !world.nepalCar) return;
+      const model = gltf.scene;
+      model.scale.setScalar(0.0165);
+      model.position.y = 0.05;
+      model.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+      carRoot.add(model);
+      world.nepalCar.wheels = [];
+      model.traverse((o) => {
+        if (!o.isMesh || !o.name) return;
+        const n = o.name.toLowerCase();
+        if (n.includes("wheel") || n.includes("tire")) {
+          world.nepalCar.wheels.push(o);
+        }
+      });
+      world.nepalCar.modelReady = true;
+      addFeed("Supercar drop ready. Press F near it to drive.", "#9be0ff");
+    },
+    undefined,
+    () => fallback()
+  );
+}
+
+function toggleNepalCarDrive() {
+  if (world.map !== "nepal" || !world.nepalCar?.group) return;
+  const car = world.nepalCar;
+  const seatPos = car.group.position.clone().add(car.seatOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), car.yaw));
+
+  if (player.driving) {
+    player.driving = false;
+    const exit = car.exitOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), car.yaw);
+    player.pos.copy(car.group.position).add(exit).setY(1.75);
+    player.velocity.set(0, 0, 0);
+    addFeed("Exited supercar", "#9be0ff");
+    return;
+  }
+
+  if (player.pos.distanceTo(seatPos) > 4.6) {
+    addFeed("Move closer to the supercar to enter (F)", "#ffd38a");
+    return;
+  }
+
+  player.driving = true;
+  player.thirdPerson = true;
+  player.velocity.set(0, 0, 0);
+  player.pos.copy(seatPos);
+  addFeed("Driving mode engaged", "#9dffb8");
+}
+
 function buildNepalWorld() {
   buildNepalGround();
   buildNepalRoadNetwork();
@@ -1483,6 +1715,7 @@ function buildNepalWorld() {
   buildStupaCluster();
   buildNepalPoiMarkers();
   buildNepalCrowdSilhouettes();
+  buildNepalSuperCar();
   buildCoverProps();
   buildHeartSymbol(0, -120);
 }
@@ -1548,10 +1781,24 @@ function createPlayerBody() {
 
 const botNames = ["Ghost", "Reaper", "Viper", "Phantom", "Jackal", "Raven", "Saber", "Frost", "Blaze", "Nova"];
 
-function spawnBots(count, levelConfig = null) {
+function spawnBots(count, levelConfig = null, options = {}) {
   const cfg = levelConfig ?? levelDefs[game.levelIndex] ?? levelDefs[0];
-  world.bots.forEach((b) => scene.remove(b.group));
-  world.bots = [];
+  const {
+    clearExisting = true,
+    spawnCenter = null,
+    spawnRadius = 40,
+    patrolCenter = null,
+    patrolRadius = 48,
+    waveId = null,
+    canRespawn = true
+  } = options;
+
+  if (clearExisting) {
+    world.bots.forEach((b) => scene.remove(b.group));
+    world.bots = [];
+  }
+
+  const startId = world.bots.length;
 
   for (let i = 0; i < count; i += 1) {
     const group = new THREE.Group();
@@ -1587,14 +1834,15 @@ function spawnBots(count, levelConfig = null) {
 
     group.add(torso, chest, hip, head, legL, legR, armL, armR, gun);
 
-    group.position.copy(randomBotSpawn());
+    const spawnPos = spawnCenter ? randomSpawnAround(spawnCenter, spawnRadius) : randomBotSpawn();
+    group.position.copy(spawnPos);
     group.traverse((o) => {
       if (o.isMesh) o.castShadow = true;
     });
     scene.add(group);
 
     world.bots.push({
-      id: i,
+      id: startId + i,
       name: botNames[i % botNames.length],
       group,
       hp: cfg.botHp,
@@ -1605,8 +1853,10 @@ function spawnBots(count, levelConfig = null) {
       accuracy: cfg.accuracy[0] + Math.random() * (cfg.accuracy[1] - cfg.accuracy[0]),
       dmgMin: cfg.dmg[0],
       dmgMax: cfg.dmg[1],
-      patrolTarget: randomPatrolTarget(),
+      patrolTarget: patrolCenter ? randomSpawnAround(patrolCenter, patrolRadius) : randomPatrolTarget(),
       deadTimer: 0,
+      canRespawn,
+      waveId,
       strafe: Math.random() > 0.5 ? 1 : -1,
       strafeTimer: 1 + Math.random() * 2,
       animPhase: Math.random() * Math.PI * 2,
@@ -1627,7 +1877,14 @@ function setLevel(index) {
   game.killsNeeded = cfg.kills;
   const mapBotBoost = world.map === "nepal" ? 1.9 : 1;
   const scaledBots = Math.max(2, Math.round(cfg.botCount * game.botMultiplier * mapBotBoost));
-  spawnBots(scaledBots, cfg);
+  if (world.map === "nepal") {
+    initNepalMission(cfg);
+    addFeed("Campaign objective: Himalaya Ridge -> Lumbini -> Flag Plaza", "#9be0ff");
+    startNepalWave(cfg, 0);
+    world.nepalMission.nextWaveIndex = 1;
+  } else {
+    spawnBots(scaledBots, cfg);
+  }
   if (levelInfoEl) {
     levelInfoEl.textContent = `LEVEL ${index + 1} / ${cfg.name.toUpperCase()} (0/${cfg.kills})`;
   }
@@ -1647,7 +1904,13 @@ function advanceLevel() {
     const cfg = levelDefs[levelDefs.length - 1];
     const mapBotBoost = world.map === "nepal" ? 1.9 : 1;
     const scaledBots = Math.max(3, Math.round((cfg.botCount + 2) * game.botMultiplier * mapBotBoost));
-    spawnBots(scaledBots, cfg);
+    if (world.map === "nepal") {
+      initNepalMission(cfg);
+      startNepalWave(cfg, 0);
+      world.nepalMission.nextWaveIndex = 1;
+    } else {
+      spawnBots(scaledBots, cfg);
+    }
     addFeed("Hard+ engaged. More bots inbound.", "#ff9a9a");
   }
 }
@@ -1686,10 +1949,12 @@ function rebuildWorld(mapId, weatherId) {
   world.nepalFogPatches = [];
   world.nepalMarkers = [];
   world.nepalSilhouettes = [];
+  world.nepalCar = null;
   world.bellZones = [];
   world.ambientZones = [];
   world.bellTimer = 0;
   world.ambientTimer = 0;
+  world.nepalMission = null;
 
   world.map = mapId;
   world.weather = weatherId;
@@ -1740,6 +2005,7 @@ function rebuildWorld(mapId, weatherId) {
   if (!game.started || game.paused) {
     player.pos.copy(player.spawn);
     player.velocity.set(0, 0, 0);
+    player.driving = false;
   }
 }
 
@@ -1770,7 +2036,8 @@ function applySettings() {
 
   if (world.sunLight) world.sunLight.shadow.mapSize.set(p.shadowMap, p.shadowMap);
 
-  ssaoPass.enabled = p.ssao && game.usePost;
+  game.ssaoWanted = p.ssao && game.usePost;
+  ssaoPass.enabled = game.ssaoWanted;
   bloomPass.enabled = p.bloom && bloomInput.checked && game.usePost;
   smaaPass.enabled = game.usePost;
 
@@ -1917,6 +2184,9 @@ function setupInput() {
     if (e.code === "Space") keys.jump = true;
     if (e.code === "ShiftLeft") keys.sprint = true;
     if (e.code === "KeyR") keys.reload = true;
+    if (e.code === "KeyF" && game.started && !game.isDead) {
+      toggleNepalCarDrive();
+    }
     if (e.code === "KeyM" && game.started) {
       modMenuEl?.classList.toggle("hidden");
     }
@@ -2090,6 +2360,20 @@ function setupInput() {
     keys.reload = true;
   }, { passive: false });
 
+  driveBtn?.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (game.started && !game.isDead) {
+      toggleNepalCarDrive();
+    }
+  }, { passive: false });
+
+  driveBtn?.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    if (game.started && !game.isDead) {
+      toggleNepalCarDrive();
+    }
+  });
+
   shootBtn.addEventListener("mousedown", () => {
     keys.fire = true;
   });
@@ -2259,6 +2543,24 @@ function damageBot(bot, amount) {
     bot.group.visible = false;
     game.playerScore += 1;
     game.killsThisLevel += 1;
+
+    if (world.map === "nepal" && world.nepalMission && world.nepalMission.activeWaveIndex >= 0) {
+      const activeWave = world.nepalMission.waves[world.nepalMission.activeWaveIndex];
+      if (activeWave && bot.waveId === activeWave.id) {
+        world.nepalMission.killsInWave += 1;
+        const left = world.nepalMission.requiredInWave - world.nepalMission.killsInWave;
+        if (left === 3 || left === 1) {
+          addFeed(`${activeWave.name}: ${left} hostile${left === 1 ? "" : "s"} left`, "#ffd38a");
+        }
+        if (world.nepalMission.killsInWave >= world.nepalMission.requiredInWave) {
+          addFeed(`${activeWave.name} cleared`, "#9dffb8");
+          world.nepalMission.activeWaveIndex = -1;
+          world.nepalMission.nextWaveIndex += 1;
+          world.nepalMission.intermission = 3.2;
+        }
+      }
+    }
+
     addFeed(`You eliminated ${bot.name}`, "#ffd172");
     if (game.killsThisLevel >= game.killsNeeded) {
       advanceLevel();
@@ -2496,6 +2798,48 @@ function updatePlayer(dt) {
   mouseDelta.x = 0;
   mouseDelta.y = 0;
 
+  if (player.driving && (!world.nepalCar?.group || world.map !== "nepal")) {
+    player.driving = false;
+  }
+
+  if (player.driving && world.nepalCar?.group) {
+    const car = world.nepalCar;
+    const throttle = clamp(-moveZ, -1, 1);
+    const steerInput = clamp(-moveX, -1, 1);
+    const targetSpeed = throttle * car.maxSpeed;
+    const accel = Math.abs(targetSpeed) > Math.abs(car.speed) ? car.accel : car.brake;
+    car.speed = lerp(car.speed, targetSpeed, clamp(dt * accel * 0.12, 0, 1));
+    if (Math.abs(throttle) < 0.05) {
+      car.speed = lerp(car.speed, 0, clamp(dt * car.drag * 0.1, 0, 1));
+    }
+
+    car.steer = lerp(car.steer, steerInput, clamp(dt * 8, 0, 1));
+    const speedFactor = clamp(Math.abs(car.speed) / car.maxSpeed, 0.18, 1);
+    car.yaw += car.steer * car.turnRate * speedFactor * dt * (car.speed >= 0 ? 1 : -1);
+
+    const driveDir = new THREE.Vector3(Math.sin(car.yaw), 0, Math.cos(car.yaw));
+    car.group.position.addScaledVector(driveDir, car.speed * dt);
+    car.group.position.x = clamp(car.group.position.x, -world.boundsX + 5, world.boundsX - 5);
+    car.group.position.z = clamp(car.group.position.z, -world.boundsZ + 5, world.boundsZ - 5);
+    car.group.rotation.y = car.yaw;
+
+    const wheelSpin = (car.speed * dt) / 0.55;
+    for (const w of car.wheels) {
+      w.rotation.x -= wheelSpin;
+    }
+
+    const seat = car.seatOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), car.yaw);
+    player.pos.copy(car.group.position).add(seat);
+    player.velocity.set(0, 0, 0);
+    player.grounded = true;
+    modeEl.textContent = "Vehicle Mode: Supercar";
+
+    if (keys.reload) keys.reload = false;
+    player.weaponCooldown = Math.max(0, player.weaponCooldown - dt);
+    player.recoil = Math.max(0, player.recoil - dt * 3);
+    return;
+  }
+
   const speed = keys.sprint ? player.sprintSpeed : player.moveSpeed;
   const local = new THREE.Vector3(moveX, 0, moveZ);
   if (local.lengthSq() > 1) local.normalize();
@@ -2531,7 +2875,7 @@ function updatePlayer(dt) {
     }
   }
 
-  if (shoot && (touchState.enabled || game.pointerLocked || gp)) performShoot();
+  if (!player.driving && shoot && (touchState.enabled || game.pointerLocked || gp)) performShoot();
 
   const nx = player.pos.clone();
   nx.x += player.velocity.x * dt;
@@ -2587,6 +2931,7 @@ function updateBots(dt) {
     if (bot.hp <= 0) {
       bot.deadTimer -= dt;
       if (bot.deadTimer <= 0) {
+        if (!bot.canRespawn) continue;
         bot.hp = bot.hpMax ?? 100;
         bot.armor = 20;
         bot.group.visible = true;
@@ -2691,6 +3036,17 @@ function updateBots(dt) {
 }
 
 function updateCamera(dt) {
+  if (player.driving && world.nepalCar?.group) {
+    const car = world.nepalCar;
+    const follow = new THREE.Vector3(0, 3.2, 8.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.yaw + Math.PI);
+    const desired = car.group.position.clone().add(follow);
+    camera.position.lerp(desired, 1 - Math.exp(-dt * 7.5));
+    const lookAt = car.group.position.clone().add(new THREE.Vector3(0, 1.3, 0));
+    camera.lookAt(lookAt);
+    player.body.visible = false;
+    return;
+  }
+
   const look = player.pos.clone().add(new THREE.Vector3(0, 0.95, 0));
   if (player.thirdPerson) {
     const offset = new THREE.Vector3(0.6, 1.85, 4.6);
@@ -2866,16 +3222,25 @@ function updateVFX(dt) {
 function updateRound(dt) {
   if (!game.started || game.paused || game.isDead) return;
 
+  const levelCfg = levelDefs[Math.min(game.levelIndex, levelDefs.length - 1)] ?? levelDefs[0];
+  updateNepalMission(dt, levelCfg);
+
   game.roundTime -= dt;
   if (game.roundTime <= 0) {
     game.roundTime = game.maxRoundTime;
     addFeed("Round reset. New engagement.", "#ffdc96");
-    world.bots.forEach((bot) => {
-      bot.hp = bot.hpMax ?? 100;
-      bot.armor = 20;
-      bot.group.visible = true;
-      bot.group.position.copy(randomBotSpawn());
-    });
+    if (world.map === "nepal") {
+      initNepalMission(levelCfg);
+      startNepalWave(levelCfg, 0);
+      world.nepalMission.nextWaveIndex = 1;
+    } else {
+      world.bots.forEach((bot) => {
+        bot.hp = bot.hpMax ?? 100;
+        bot.armor = 20;
+        bot.group.visible = true;
+        bot.group.position.copy(randomBotSpawn());
+      });
+    }
   }
 
   const mins = Math.floor(game.roundTime / 60).toString().padStart(2, "0");
@@ -2886,11 +3251,25 @@ function updateRound(dt) {
   armorEl.textContent = Math.ceil(player.armor).toString();
   ammoEl.textContent = `${player.ammoClip} / ${player.ammoReserve}`;
   if (levelInfoEl) {
-    const cfg = levelDefs[Math.min(game.levelIndex, levelDefs.length - 1)];
-    levelInfoEl.textContent = `LEVEL ${game.levelIndex + 1} / ${cfg.name.toUpperCase()} (${game.killsThisLevel}/${game.killsNeeded})`;
+    const cfg = levelCfg;
+    if (world.map === "nepal" && world.nepalMission) {
+      const activeWave = world.nepalMission.activeWaveIndex >= 0 ? world.nepalMission.waves[world.nepalMission.activeWaveIndex] : null;
+      if (activeWave) {
+        levelInfoEl.textContent = `${activeWave.name.toUpperCase()} (${world.nepalMission.killsInWave}/${world.nepalMission.requiredInWave})`;
+      } else if (!world.nepalMission.complete) {
+        levelInfoEl.textContent = "REDEPLOY WINDOW - NEXT WAVE INBOUND";
+      } else {
+        levelInfoEl.textContent = `LEVEL ${game.levelIndex + 1} / ${cfg.name.toUpperCase()} (${game.killsThisLevel}/${game.killsNeeded})`;
+      }
+    } else {
+      levelInfoEl.textContent = `LEVEL ${game.levelIndex + 1} / ${cfg.name.toUpperCase()} (${game.killsThisLevel}/${game.killsNeeded})`;
+    }
   }
   if (levelProgressFillEl) {
-    const pct = Math.min(1, game.killsThisLevel / Math.max(1, game.killsNeeded));
+    let pct = Math.min(1, game.killsThisLevel / Math.max(1, game.killsNeeded));
+    if (world.map === "nepal" && world.nepalMission && world.nepalMission.activeWaveIndex >= 0) {
+      pct = Math.min(1, world.nepalMission.killsInWave / Math.max(1, world.nepalMission.requiredInWave));
+    }
     levelProgressFillEl.style.width = `${Math.round(pct * 100)}%`;
   }
   setHealthBars();
@@ -2952,6 +3331,13 @@ function animate() {
   } else {
     keys.fire = false;
     touchState.firing = false;
+  }
+
+  if (game.usePost) {
+    const lookDir = new THREE.Vector3();
+    camera.getWorldDirection(lookDir);
+    const aimingSky = lookDir.y > 0.46;
+    ssaoPass.enabled = game.ssaoWanted && !aimingSky;
   }
 
   if (game.usePost) {
