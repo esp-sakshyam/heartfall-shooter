@@ -1438,9 +1438,12 @@ function rebuildWorld(mapId, weatherId) {
 
 function applyWorldSelection(force = false) {
   const nextWeather = menuWeatherInput?.value ?? world.weather;
-  const nextMap = menuMapInput?.value ?? world.map;
+  const rawMap = (menuMapInput?.value ?? world.map ?? "city").toLowerCase().trim();
+  const nextMap = rawMap === "nepal" || rawMap === "outpost" ? rawMap : "city";
   if (force || nextWeather !== world.weather || nextMap !== world.map || !world.sunLight) {
     rebuildWorld(nextMap, nextWeather);
+    const mapLabel = nextMap === "nepal" ? "Nepal Highlands" : nextMap === "outpost" ? "Desert Outpost" : "Heartfall City";
+    addFeed(`Map loaded: ${mapLabel}`, "#9be0ff");
   }
 }
 
@@ -1796,6 +1799,12 @@ function setupInput() {
 }
 
 function setupUI() {
+  menuMapInput?.addEventListener("change", () => {
+    if (!game.started) {
+      applyWorldSelection(true);
+    }
+  });
+
   settingsBtn.addEventListener("click", () => {
     setPanel(menuPanel, false);
     setPanel(settingsPanel, true);
