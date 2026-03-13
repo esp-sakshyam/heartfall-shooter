@@ -1264,20 +1264,47 @@ function buildHimalayaRange() {
 }
 
 function createNepalFlagMesh() {
-  const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  shape.lineTo(0, 2.8);
-  shape.lineTo(2.3, 2.1);
-  shape.lineTo(0, 1.3);
-  shape.lineTo(2.7, 0.4);
-  shape.lineTo(0, 0);
+  const makeShape = (inset = 0) => {
+    const s = new THREE.Shape();
+    s.moveTo(0 + inset, 0 + inset * 0.4);
+    s.lineTo(0 + inset, 2.8 - inset);
+    s.lineTo(2.3 - inset, 2.1 - inset * 0.5);
+    s.lineTo(0 + inset, 1.3);
+    s.lineTo(2.7 - inset, 0.4 + inset * 0.25);
+    s.lineTo(0 + inset, 0 + inset * 0.4);
+    return s;
+  };
 
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false });
-  const mat = new THREE.MeshStandardMaterial({ color: 0xcf1f2e, roughness: 0.45, metalness: 0.08 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
+  const group = new THREE.Group();
+  const border = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(makeShape(0), { depth: 0.07, bevelEnabled: false }),
+    new THREE.MeshStandardMaterial({ color: 0x153f9f, roughness: 0.45, metalness: 0.12 })
+  );
+  const body = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(makeShape(0.18), { depth: 0.08, bevelEnabled: false }),
+    new THREE.MeshStandardMaterial({ color: 0xce1c2f, roughness: 0.42, metalness: 0.08 })
+  );
+  body.position.z = 0.01;
+
+  const moonOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.03, 18), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 }));
+  moonOuter.rotation.x = Math.PI / 2;
+  moonOuter.position.set(0.9, 1.88, 0.11);
+  const moonInner = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.035, 18), new THREE.MeshStandardMaterial({ color: 0xce1c2f, roughness: 0.4 }));
+  moonInner.rotation.x = Math.PI / 2;
+  moonInner.position.set(0.98, 1.95, 0.115);
+
+  const sun = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.03, 18), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 }));
+  sun.rotation.x = Math.PI / 2;
+  sun.position.set(1.0, 0.78, 0.11);
+
+  group.add(border, body, moonOuter, moonInner, sun);
+  group.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
 }
 
 function buildNepalFlagMonument() {
@@ -1361,7 +1388,14 @@ function buildStupaCluster() {
   const spots = [
     [-220, -120],
     [-255, -170],
-    [-180, -210]
+    [-180, -210],
+    [-280, -240],
+    [-120, -250],
+    [-70, -180],
+    [-300, -90],
+    [-245, -60],
+    [-100, -95],
+    [-36, -130]
   ];
   for (const [x, z] of spots) {
     const g = new THREE.Group();
@@ -1591,7 +1625,7 @@ function setLevel(index) {
   const cfg = levelDefs[Math.min(index, levelDefs.length - 1)];
   game.killsThisLevel = 0;
   game.killsNeeded = cfg.kills;
-  const mapBotBoost = world.map === "nepal" ? 1.45 : 1;
+  const mapBotBoost = world.map === "nepal" ? 1.9 : 1;
   const scaledBots = Math.max(2, Math.round(cfg.botCount * game.botMultiplier * mapBotBoost));
   spawnBots(scaledBots, cfg);
   if (levelInfoEl) {
@@ -1611,7 +1645,7 @@ function advanceLevel() {
     game.killsThisLevel = 0;
     game.killsNeeded += 10;
     const cfg = levelDefs[levelDefs.length - 1];
-    const mapBotBoost = world.map === "nepal" ? 1.45 : 1;
+    const mapBotBoost = world.map === "nepal" ? 1.9 : 1;
     const scaledBots = Math.max(3, Math.round((cfg.botCount + 2) * game.botMultiplier * mapBotBoost));
     spawnBots(scaledBots, cfg);
     addFeed("Hard+ engaged. More bots inbound.", "#ff9a9a");

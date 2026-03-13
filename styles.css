@@ -308,6 +308,11 @@ html, body {
   transform: translate(-50%, -50%) scale(1);
 }
 
+#menu.panel {
+  width: min(760px, calc(100vw - 20px));
+  max-height: min(92vh, 840px);
+}
+
 /* Panel logo area */
 .panel-logo {
   display: flex;
@@ -335,6 +340,7 @@ html, body {
 
 .menu-selects {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -345,6 +351,8 @@ html, body {
   border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.14);
   background: rgba(255,255,255,0.04);
+  max-height: 190px;
+  overflow: auto;
 }
 
 .update-log h3 {
@@ -688,6 +696,18 @@ button:hover  { filter: brightness(1.12); }
 
   .panel { padding: 18px 16px; }
 
+  #menu.panel {
+    width: min(96vw, 620px);
+  }
+
+  .menu-selects {
+    grid-template-columns: 1fr;
+  }
+
+  .update-log {
+    max-height: 170px;
+  }
+
   .key-hints { display: none; }
 }
 
@@ -704,6 +724,10 @@ button:hover  { filter: brightness(1.12); }
   #killFeed { width: min(220px, 90vw); }
 
   .panel { padding: 14px 12px; }
+
+  .update-log {
+    max-height: 145px;
+  }
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────── */
