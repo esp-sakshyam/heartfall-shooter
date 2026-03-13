@@ -32,6 +32,10 @@ html, body {
   color: var(--ink);
   background: var(--bg-0);
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ── Canvas ───────────────────────────────────────────────────── */
@@ -420,6 +424,10 @@ button {
   text-transform: uppercase;
   font-size: 13px;
   transition: filter 0.15s, transform 0.1s;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:active { transform: scale(0.96); }
@@ -567,9 +575,7 @@ button:hover  { filter: brightness(1.12); }
   animation: pulse 1.2s ease-in-out infinite alternate;
 }
 
-@media (orientation: portrait) {
-  #rotateHint { display: flex; }
-}
+#rotateHint.active { display: flex; }
 
 /* ── Utility ──────────────────────────────────────────────────── */
 .hidden { display: none !important; }

@@ -44,6 +44,7 @@ const levelCompleteEl = document.getElementById("levelComplete");
 const levelCompleteTitleEl = document.getElementById("levelCompleteTitle");
 const levelCompleteDescEl = document.getElementById("levelCompleteDesc");
 const levelContinueBtn = document.getElementById("levelContinue");
+const rotateHintEl = document.getElementById("rotateHint");
 const hpBarEl = document.getElementById("hpBar");
 const armorBarEl = document.getElementById("armorBar");
 const resLabel = document.getElementById("resLabel");
@@ -117,7 +118,10 @@ const game = {
   basePixelRatio: 1,
   dynamicScale: 1,
   fpsAvg: 60,
-  perfTimer: 0
+  perfTimer: 0,
+  perfMode: "normal",
+  botUpdateAcc: 0,
+  botUpdateStep: 1 / 45
 };
 
 const levelDefs = [
@@ -182,6 +186,7 @@ const gyroState = {
   targetY: 0,
   baseGamma: 0,
   baseBeta: 0,
+  baseAlpha: 0,
   hasBase: false
 };
 
@@ -200,6 +205,19 @@ function clamp(v, min, max) {
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+function normalizeAngle(deg) {
+  let a = deg % 360;
+  if (a > 180) a -= 360;
+  if (a < -180) a += 360;
+  return a;
+}
+
+function updateOrientationHint() {
+  if (!rotateHintEl) return;
+  const isPortrait = window.innerHeight > window.innerWidth;
+  rotateHintEl.classList.toggle("active", isPortrait);
 }
 
 function setHealthBars() {
@@ -801,6 +819,9 @@ function applySettings() {
     scene.fog.density = 0.006;
   }
 
+  game.botUpdateStep = game.quality === "mobile" ? 1 / 25 : 1 / 35;
+  game.perfMode = "normal";
+
   if (gyroInput) {
     toggleGyro(gyroInput.checked);
   }
@@ -820,13 +841,15 @@ function onGyro(e) {
   if (!gyroState.hasBase) {
     gyroState.baseGamma = gamma;
     gyroState.baseBeta = beta;
+    gyroState.baseAlpha = e.alpha ?? 0;
     gyroState.hasBase = true;
     return;
   }
-  const relGamma = gamma - gyroState.baseGamma;
-  const relBeta = beta - gyroState.baseBeta;
-  const yaw = clamp(relGamma / 28, -1, 1);
-  const pitch = clamp(-relBeta / 28, -1, 1);
+  const alpha = e.alpha ?? 0;
+  const relYaw = normalizeAngle(alpha - (gyroState.baseAlpha ?? alpha));
+  const relPitch = beta - gyroState.baseBeta;
+  const yaw = clamp(relYaw / 55, -1, 1);
+  const pitch = clamp(-relPitch / 28, -1, 1);
   const dz = 0.04;
   const yawOut = Math.abs(yaw) < dz ? 0 : yaw;
   const pitchOut = Math.abs(pitch) < dz ? 0 : pitch;
@@ -842,6 +865,7 @@ async function toggleGyro(enable) {
     gyroState.lookY = 0;
     gyroState.targetX = 0;
     gyroState.targetY = 0;
+    gyroState.baseAlpha = undefined;
     if (typeof DeviceOrientationEvent?.requestPermission === "function") {
       const res = await DeviceOrientationEvent.requestPermission();
       if (res !== "granted") return;
@@ -1647,6 +1671,7 @@ function onResize() {
   composer.setSize(w, h);
   ssaoPass.setSize(w, h);
   smaaPass.setSize(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+  updateOrientationHint();
 }
 
 function animate() {
@@ -1660,6 +1685,13 @@ function animate() {
     if (game.fpsAvg < 52 && game.dynamicScale > 0.8) {
       game.dynamicScale = Math.max(0.8, game.dynamicScale - 0.04);
       renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
+      if (game.perfMode === "normal" && game.fpsAvg < 45) {
+        ssaoPass.enabled = false;
+        bloomPass.enabled = false;
+        smaaPass.enabled = false;
+        renderer.shadowMap.enabled = false;
+        game.perfMode = "low";
+      }
     } else if (game.fpsAvg > 58 && game.dynamicScale < 1) {
       game.dynamicScale = Math.min(1, game.dynamicScale + 0.02);
       renderer.setPixelRatio(game.basePixelRatio * game.dynamicScale);
@@ -1675,7 +1707,11 @@ function animate() {
 
   if (!game.paused) {
     updatePlayer(dt);
-    if (!game.isDead) updateBots(dt);
+    game.botUpdateAcc += dt;
+    if (!game.isDead && game.botUpdateAcc >= game.botUpdateStep) {
+      updateBots(game.botUpdateAcc);
+      game.botUpdateAcc = 0;
+    }
     updateCamera(dt);
     updateVFX(dt);
     updateRound(dt);
@@ -1705,6 +1741,8 @@ function init() {
   onResize();
   setHealthBars();
   window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", updateOrientationHint);
+  updateOrientationHint();
 
   gsap.fromTo(".brand h1", { opacity: 0, y: -22, letterSpacing: "8px" }, { opacity: 1, y: 0, letterSpacing: "3px", duration: 1.1, ease: "power2.out" });
   gsap.fromTo(".brand p", { opacity: 0 }, { opacity: 0.8, duration: 0.8, delay: 0.5 });
