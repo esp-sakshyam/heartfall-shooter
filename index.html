@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Heartfall: Third Person Protocol</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
+          "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <!-- ── 3-D canvas ─────────────────────────────────── -->
+    <canvas id="game"></canvas>
+
+    <!-- ── HUD overlay ───────────────────────────────── -->
+    <div id="overlay">
+      <div class="vignette"></div>
+
+      <!-- Top bar -->
+      <header id="topHud">
+        <div class="brand">
+          <h1>HEARTFALL</h1>
+          <p>third person protocol</p>
+        </div>
+        <div id="roundInfo">
+          <span id="timer">03:00</span>
+          <span id="levelInfo">LEVEL 1 / EASY (0/10)</span>
+          <div id="levelProgress" aria-hidden="true">
+            <div id="levelProgressFill"></div>
+          </div>
+          <span id="score">YOU 0 : 0 BOTS</span>
+        </div>
+      </header>
+
+      <!-- Crosshair -->
+      <div id="crosshair" aria-hidden="true">
+        <div class="ch-line ch-top"></div>
+        <div class="ch-line ch-right"></div>
+        <div class="ch-line ch-bottom"></div>
+        <div class="ch-line ch-left"></div>
+        <div class="ch-dot"></div>
+      </div>
+
+      <!-- Bottom stats -->
+      <footer id="bottomHud">
+        <div class="stat">
+          <label>HP</label>
+          <strong id="hp">100</strong>
+          <div class="bar-wrap"><div class="bar hp-bar" id="hpBar"></div></div>
+        </div>
+        <div class="stat">
+          <label>Armor</label>
+          <strong id="armor">50</strong>
+          <div class="bar-wrap"><div class="bar armor-bar" id="armorBar"></div></div>
+        </div>
+        <div class="stat">
+          <label>Ammo</label>
+          <strong id="ammo">30 / 90</strong>
+        </div>
+        <div class="stat wide">
+          <label>Mode</label>
+          <strong id="mode">First Person Tactical</strong>
+        </div>
+      </footer>
+
+      <!-- Kill feed -->
+      <div id="killFeed"></div>
+
+      <!-- Hit indicator ring -->
+      <div id="hitFlash" class="hidden"></div>
+
+      <!-- ── Death screen ───────────────────────────── -->
+      <div id="deathScreen" class="panel-full hidden">
+        <div class="death-icon">&#9760;</div>
+        <h2>You Were Eliminated</h2>
+        <p class="tagline">"The third person watches, learns, and rises."</p>
+        <p>Respawning in <span id="respawnCount">4</span>…</p>
+      </div>
+
+      <!-- ── Level complete ───────────────────────────── -->
+      <div id="levelComplete" class="panel-full hidden">
+        <div class="death-icon">&#10084;</div>
+        <h2 id="levelCompleteTitle">Level Complete</h2>
+        <p class="tagline">"You survived the lesson. The next one hurts more."</p>
+        <p id="levelCompleteDesc">Preparing next level…</p>
+        <button id="levelContinue" class="btn-primary">Continue</button>
+      </div>
+
+      <!-- ── Main menu ──────────────────────────────── -->
+      <section id="menu" class="panel open">
+        <div class="panel-logo">
+          <span class="heart-icon">&#10084;&#65039;</span>
+          <h2>Heartfall Operations</h2>
+        </div>
+        <p class="subtitle">
+          Tactical bot warfare inspired by CS2 positioning and recoil discipline.<br/>
+          A fractured heart forged the deadliest third-person tactician.
+        </p>
+        <div class="key-hints">
+          <span>WASD – Move</span>
+          <span>Mouse – Aim</span>
+          <span>LMB – Shoot</span>
+          <span>R – Reload</span>
+          <span>Shift – Sprint</span>
+          <span>Space – Jump</span>
+          <span>V – Toggle View</span>
+          <span>ESC – Pause</span>
+        </div>
+        <div class="actions">
+          <button id="startBtn" class="btn-primary">&#9654; Deploy</button>
+          <button id="settingsBtn" class="btn-secondary">&#9881; Settings</button>
+        </div>
+        <p class="made-by">made by sakshyam upadhayay</p>
+      </section>
+
+      <!-- ── Settings panel ────────────────────────── -->
+      <section id="settings" class="panel">
+        <h2>&#9881; Performance Settings</h2>
+
+        <label class="field">
+          Difficulty
+          <select id="difficulty">
+            <option value="0" selected>Easy</option>
+            <option value="1">Medium</option>
+            <option value="2">Hard</option>
+          </select>
+        </label>
+
+        <label class="field">
+          Graphics Profile
+          <select id="quality">
+            <option value="ultra">Ultra — High-end PC</option>
+            <option value="high" selected>High — Default</option>
+            <option value="medium">Medium — Budget PC</option>
+            <option value="mobile">Mobile — Low-end / Phone</option>
+          </select>
+        </label>
+
+        <label class="field">
+          Resolution Scale &nbsp;<span id="resLabel">1.0×</span>
+          <input id="resolution" type="range" min="0.4" max="1.5" step="0.05" value="1" />
+        </label>
+
+        <label class="field">
+          Look Sensitivity &nbsp;<span id="senLabel">1.2</span>
+          <input id="sensitivity" type="range" min="0.3" max="3.0" step="0.05" value="1.2" />
+        </label>
+
+        <label class="toggle">
+          <input id="bloom" type="checkbox" checked />
+          <span>Bloom / Glow Effect</span>
+        </label>
+        <label class="toggle">
+          <input id="touch" type="checkbox" />
+          <span>Force Touch Controls</span>
+        </label>
+
+        <div class="actions">
+          <button id="applySettings" class="btn-primary">Apply &amp; Save</button>
+          <button id="backBtn" class="btn-secondary">Back</button>
+        </div>
+
+        <p class="hint">
+          Xbox / PlayStation controllers are auto-detected via the browser Gamepad API.<br/>
+          Left stick = move &nbsp;|&nbsp; Right stick = aim &nbsp;|&nbsp; RT = shoot &nbsp;|&nbsp; A = jump &nbsp;|&nbsp; X = reload &nbsp;|&nbsp; LB = toggle view
+        </p>
+      </section>
+
+      <!-- ── Touch controls ────────────────────────── -->
+      <div id="touchControls" class="hidden">
+        <div id="leftPad"  class="pad" aria-label="Move joystick"><div class="stick"></div></div>
+        <div id="rightPad" class="pad" aria-label="Look joystick"><div class="stick"></div></div>
+        <button id="shootBtn" class="touch-btn fire">&#128311;</button>
+        <button id="jumpBtn"  class="touch-btn jump">&#8679;</button>
+        <button id="reloadBtn" class="touch-btn reload">R</button>
+      </div>
+
+      <!-- ── Watermark ──────────────────────────────── -->
+      <div id="watermark">made by sakshyam upadhayay</div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
