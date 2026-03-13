@@ -125,8 +125,12 @@ const world = {
   nepalFlags: [],
   nepalWheels: [],
   nepalFogPatches: [],
+  nepalMarkers: [],
+  nepalSilhouettes: [],
   bellZones: [],
+  ambientZones: [],
   bellTimer: 0,
+  ambientTimer: 0,
   audioCtx: null,
   bellGain: null,
   weather: "clear",
@@ -424,6 +428,64 @@ function playTempleBell(intensity = 1) {
   osc2.start(now);
   osc1.stop(now + 1.65);
   osc2.stop(now + 1.65);
+}
+
+function playAmbientChant(intensity = 1) {
+  if (!world.audioCtx || !world.bellGain) return;
+  const now = world.audioCtx.currentTime;
+  const osc = world.audioCtx.createOscillator();
+  const gain = world.audioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(198, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.035 * intensity, now + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.4);
+  osc.connect(gain);
+  gain.connect(world.bellGain);
+  osc.start(now);
+  osc.stop(now + 2.45);
+}
+
+function playAmbientDrum(intensity = 1) {
+  if (!world.audioCtx || !world.bellGain) return;
+  const now = world.audioCtx.currentTime;
+  const osc = world.audioCtx.createOscillator();
+  const gain = world.audioCtx.createGain();
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(82, now);
+  osc.frequency.exponentialRampToValueAtTime(48, now + 0.18);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.08 * intensity, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+  osc.connect(gain);
+  gain.connect(world.bellGain);
+  osc.start(now);
+  osc.stop(now + 0.36);
+}
+
+function createPoiMarker(text) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 128;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "rgba(10,16,28,0.76)";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.strokeStyle = "rgba(255,230,190,0.8)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(8, 8, c.width - 16, c.height - 16);
+  ctx.fillStyle = "#ffe8c7";
+  ctx.font = "700 42px Space Grotesk";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, c.width / 2, c.height / 2);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 3.4),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  );
+  return plane;
 }
 
 const weatherPresets = {
@@ -725,7 +787,10 @@ function buildStreetFurniture() {
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x294d20, roughness: 0.95 });
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.9 });
 
-  for (let z = -200; z <= 200; z += 20) {
+  const streetStep = game.quality === "ultra" ? 20 : game.quality === "high" ? 22 : game.quality === "medium" ? 28 : 34;
+  const treeStep = streetStep * 2;
+
+  for (let z = -200; z <= 200; z += streetStep) {
     for (const sx of [-13.5, 13.5]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 9, 8), poleMat);
       pole.position.set(sx, 4.5, z);
@@ -747,7 +812,7 @@ function buildStreetFurniture() {
       world.dynamicLights.push(lamp);
     }
 
-    if (z % 40 === 0) {
+    if (z % treeStep === 0) {
       for (const tx of [-21, 21]) {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 3.5, 9), trunkMat);
         trunk.position.set(tx, 1.75, z + (Math.random() - 0.5) * 4);
@@ -959,7 +1024,8 @@ function buildOutpostStructures() {
 
 function buildOutpostProps() {
   const rockMat = new THREE.MeshStandardMaterial({ color: 0x8c7f6a, roughness: 1.0 });
-  for (let i = 0; i < 14; i += 1) {
+  const rockCount = game.quality === "ultra" ? 14 : game.quality === "high" ? 12 : game.quality === "medium" ? 9 : 7;
+  for (let i = 0; i < rockCount; i += 1) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4 + Math.random() * 1.6, 0), rockMat);
     rock.position.set((Math.random() - 0.5) * 120, 0.9, (Math.random() - 0.5) * 200);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
@@ -970,7 +1036,8 @@ function buildOutpostProps() {
   }
 
   const barrelMat = new THREE.MeshStandardMaterial({ color: 0x4d4f55, roughness: 0.6, metalness: 0.65 });
-  for (let i = 0; i < 10; i += 1) {
+  const barrelCount = game.quality === "ultra" ? 10 : game.quality === "high" ? 8 : game.quality === "medium" ? 6 : 4;
+  for (let i = 0; i < barrelCount; i += 1) {
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.2, 12), barrelMat);
     barrel.position.set((Math.random() - 0.5) * 70, 0.6, (Math.random() - 0.5) * 170);
     barrel.castShadow = true;
@@ -1176,12 +1243,212 @@ function buildNepalVibes() {
   world.bellZones.push({ position: new THREE.Vector3(70, 1.5, -80), radius: 120, cooldown: 0 });
 }
 
+function buildHimalayaRange() {
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x6f7d84, roughness: 0.97 });
+  const snowMat = new THREE.MeshStandardMaterial({ color: 0xf5f9ff, roughness: 0.82, metalness: 0.03 });
+  for (let i = 0; i < 11; i += 1) {
+    const h = 180 + Math.random() * 110;
+    const r = 52 + Math.random() * 36;
+    const peak = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), rockMat);
+    peak.position.set(-520 + i * 104, h * 0.5 - 18, -560 + Math.random() * 70);
+    peak.castShadow = true;
+    peak.receiveShadow = true;
+    mapGroup.add(peak);
+
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(r * 0.42, h * 0.25, 7), snowMat);
+    cap.position.set(peak.position.x, h * 0.9, peak.position.z);
+    cap.castShadow = true;
+    cap.receiveShadow = true;
+    mapGroup.add(cap);
+  }
+}
+
+function createNepalFlagMesh() {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(0, 2.8);
+  shape.lineTo(2.3, 2.1);
+  shape.lineTo(0, 1.3);
+  shape.lineTo(2.7, 0.4);
+  shape.lineTo(0, 0);
+
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false });
+  const mat = new THREE.MeshStandardMaterial({ color: 0xcf1f2e, roughness: 0.45, metalness: 0.08 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function buildNepalFlagMonument() {
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.24, 22, 12),
+    new THREE.MeshStandardMaterial({ color: 0xb8c6d6, roughness: 0.45, metalness: 0.55 })
+  );
+  pole.position.set(140, 11, -160);
+  pole.castShadow = true;
+  mapGroup.add(pole);
+
+  const flag = createNepalFlagMesh();
+  flag.position.set(140.2, 15.4, -160.2);
+  flag.rotation.y = Math.PI;
+  mapGroup.add(flag);
+  world.nepalFlags.push({ flag, baseX: flag.position.x, baseY: flag.position.y, baseZ: flag.position.z, phase: Math.random() * Math.PI * 2 });
+}
+
+function buildLumbiniComplex() {
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(34, 1.2, 24),
+    new THREE.MeshStandardMaterial({ color: 0xe6decf, roughness: 0.9, metalness: 0.02 })
+  );
+  base.position.set(-140, 0.6, 170);
+  base.receiveShadow = true;
+  base.castShadow = true;
+  mapGroup.add(base);
+
+  const shrine = new THREE.Mesh(
+    new THREE.BoxGeometry(18, 7.5, 12),
+    new THREE.MeshStandardMaterial({ color: 0xf0ece2, roughness: 0.82, metalness: 0.03 })
+  );
+  shrine.position.set(-140, 4.6, 170);
+  shrine.castShadow = true;
+  shrine.receiveShadow = true;
+  mapGroup.add(shrine);
+
+  const pond = new THREE.Mesh(
+    new THREE.PlaneGeometry(28, 18),
+    new THREE.MeshStandardMaterial({ color: 0x6aa4c7, roughness: 0.22, metalness: 0.12, transparent: true, opacity: 0.8 })
+  );
+  pond.rotation.x = -Math.PI / 2;
+  pond.position.set(-140, 0.03, 145);
+  mapGroup.add(pond);
+
+  world.colliders.push(new THREE.Box3().setFromObject(base));
+  world.colliders.push(new THREE.Box3().setFromObject(shrine));
+}
+
+function buildNepalMapLogo() {
+  const shape = new THREE.Shape();
+  shape.moveTo(-2.6, 0.4);
+  shape.lineTo(-1.4, 1.4);
+  shape.lineTo(0.1, 1.3);
+  shape.lineTo(1.1, 1.9);
+  shape.lineTo(2.5, 1.2);
+  shape.lineTo(2.2, 0.1);
+  shape.lineTo(0.9, -0.5);
+  shape.lineTo(-0.4, -0.4);
+  shape.lineTo(-1.6, -0.9);
+  shape.lineTo(-2.6, -0.2);
+  shape.lineTo(-2.6, 0.4);
+
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.8, bevelEnabled: false });
+  const logo = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({ color: 0xcc2532, roughness: 0.35, metalness: 0.2, emissive: 0x240709, emissiveIntensity: 0.35 })
+  );
+  logo.rotation.x = -Math.PI / 2;
+  logo.position.set(120, 1.1, 120);
+  logo.scale.setScalar(8.5);
+  logo.castShadow = true;
+  logo.receiveShadow = true;
+  mapGroup.add(logo);
+  world.colliders.push(new THREE.Box3().setFromObject(logo));
+}
+
+function buildStupaCluster() {
+  const matA = new THREE.MeshStandardMaterial({ color: 0xf2efe7, roughness: 0.8, metalness: 0.02 });
+  const matB = new THREE.MeshStandardMaterial({ color: 0xd5b45b, roughness: 0.48, metalness: 0.18 });
+  const spots = [
+    [-220, -120],
+    [-255, -170],
+    [-180, -210]
+  ];
+  for (const [x, z] of spots) {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.8, 1.2, 20), matA);
+    base.position.y = 0.6;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(2.8, 20, 14), matA);
+    dome.position.y = 2.5;
+    dome.scale.y = 0.68;
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.8, 2.4, 10), matB);
+    top.position.y = 4.1;
+    g.add(base, dome, top);
+    g.position.set(x, 0, z);
+    g.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+    mapGroup.add(g);
+    world.colliders.push(new THREE.Box3().setFromObject(g));
+  }
+}
+
+function buildNepalPoiMarkers() {
+  const markers = [
+    { text: "Himalaya Ridge", pos: new THREE.Vector3(-360, 36, -420) },
+    { text: "Lumbini Complex", pos: new THREE.Vector3(-140, 8, 196) },
+    { text: "Flag Plaza", pos: new THREE.Vector3(140, 20, -140) },
+    { text: "Stupa Circle", pos: new THREE.Vector3(-220, 10, -180) }
+  ];
+
+  for (const m of markers) {
+    const marker = createPoiMarker(m.text);
+    marker.position.copy(m.pos);
+    mapGroup.add(marker);
+    world.nepalMarkers.push(marker);
+  }
+}
+
+function buildNepalCrowdSilhouettes() {
+  const spots = [
+    [-155, 170],
+    [-130, 178],
+    [-120, 160],
+    [-235, -185],
+    [-208, -145],
+    [12, -222]
+  ];
+
+  for (let i = 0; i < spots.length; i += 1) {
+    const [x, z] = spots[i];
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x11151b, roughness: 0.95, metalness: 0.02 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.88, 4, 8), mat);
+    body.position.y = 1.0;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 10, 8), mat);
+    head.position.y = 1.78;
+    g.add(body, head);
+    g.position.set(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3);
+    g.rotation.y = Math.random() * Math.PI * 2;
+    g.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+    mapGroup.add(g);
+    world.nepalSilhouettes.push({ group: g, baseY: g.position.y, phase: Math.random() * Math.PI * 2 });
+  }
+
+  world.ambientZones.push({ type: "chant", position: new THREE.Vector3(-140, 1.5, 170), radius: 210 });
+  world.ambientZones.push({ type: "drum", position: new THREE.Vector3(-220, 1.5, -170), radius: 190 });
+}
+
 function buildNepalWorld() {
   buildNepalGround();
   buildNepalRoadNetwork();
   buildNepalVillage();
   buildNepalCourtyard();
   buildNepalVibes();
+  buildHimalayaRange();
+  buildLumbiniComplex();
+  buildNepalFlagMonument();
+  buildNepalMapLogo();
+  buildStupaCluster();
+  buildNepalPoiMarkers();
+  buildNepalCrowdSilhouettes();
   buildCoverProps();
   buildHeartSymbol(0, -120);
 }
@@ -1324,7 +1591,8 @@ function setLevel(index) {
   const cfg = levelDefs[Math.min(index, levelDefs.length - 1)];
   game.killsThisLevel = 0;
   game.killsNeeded = cfg.kills;
-  const scaledBots = Math.max(2, Math.round(cfg.botCount * game.botMultiplier));
+  const mapBotBoost = world.map === "nepal" ? 1.45 : 1;
+  const scaledBots = Math.max(2, Math.round(cfg.botCount * game.botMultiplier * mapBotBoost));
   spawnBots(scaledBots, cfg);
   if (levelInfoEl) {
     levelInfoEl.textContent = `LEVEL ${index + 1} / ${cfg.name.toUpperCase()} (0/${cfg.kills})`;
@@ -1343,7 +1611,8 @@ function advanceLevel() {
     game.killsThisLevel = 0;
     game.killsNeeded += 10;
     const cfg = levelDefs[levelDefs.length - 1];
-    const scaledBots = Math.max(3, Math.round((cfg.botCount + 2) * game.botMultiplier));
+    const mapBotBoost = world.map === "nepal" ? 1.45 : 1;
+    const scaledBots = Math.max(3, Math.round((cfg.botCount + 2) * game.botMultiplier * mapBotBoost));
     spawnBots(scaledBots, cfg);
     addFeed("Hard+ engaged. More bots inbound.", "#ff9a9a");
   }
@@ -1381,8 +1650,12 @@ function rebuildWorld(mapId, weatherId) {
   world.nepalFlags = [];
   world.nepalWheels = [];
   world.nepalFogPatches = [];
+  world.nepalMarkers = [];
+  world.nepalSilhouettes = [];
   world.bellZones = [];
+  world.ambientZones = [];
   world.bellTimer = 0;
+  world.ambientTimer = 0;
 
   world.map = mapId;
   world.weather = weatherId;
@@ -2458,8 +2731,18 @@ function updateVFX(dt) {
       fp.fogPatch.material.opacity = 0.06 + Math.sin(t * 0.6 + fp.phase) * 0.018;
     }
 
+    for (const marker of world.nepalMarkers) {
+      marker.quaternion.copy(camera.quaternion);
+    }
+
+    for (const s of world.nepalSilhouettes) {
+      s.group.position.y = s.baseY + Math.sin(t * 1.6 + s.phase) * 0.06;
+      s.group.rotation.y += dt * 0.08;
+    }
+
     if (game.started && !game.paused && !game.isDead) {
       world.bellTimer += dt;
+      world.ambientTimer += dt;
       if (world.bellTimer > 4.6) {
         world.bellTimer = 0;
         let best = null;
@@ -2471,6 +2754,24 @@ function updateVFX(dt) {
           }
         }
         if (best) playTempleBell(best.intensity);
+      }
+
+      if (world.ambientTimer > 3.2) {
+        world.ambientTimer = 0;
+        let bestZone = null;
+        for (const zone of world.ambientZones) {
+          const d = zone.position.distanceTo(player.pos);
+          if (d < zone.radius) {
+            const intensity = clamp(1 - d / zone.radius, 0.15, 1);
+            if (!bestZone || intensity > bestZone.intensity) {
+              bestZone = { type: zone.type, intensity };
+            }
+          }
+        }
+        if (bestZone) {
+          if (bestZone.type === "chant") playAmbientChant(bestZone.intensity);
+          if (bestZone.type === "drum") playAmbientDrum(bestZone.intensity);
+        }
       }
     }
   }
