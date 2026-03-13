@@ -825,8 +825,8 @@ function onGyro(e) {
   }
   const relGamma = gamma - gyroState.baseGamma;
   const relBeta = beta - gyroState.baseBeta;
-  const yaw = clamp(relGamma / 30, -1, 1);
-  const pitch = clamp(relBeta / 30, -1, 1);
+  const yaw = clamp(relGamma / 28, -1, 1);
+  const pitch = clamp(-relBeta / 28, -1, 1);
   const dz = 0.04;
   const yawOut = Math.abs(yaw) < dz ? 0 : yaw;
   const pitchOut = Math.abs(pitch) < dz ? 0 : pitch;
@@ -1010,6 +1010,7 @@ function setupInput() {
 
   window.addEventListener("touchmove", (e) => {
     if (!touchState.enabled) return;
+    e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === touchZones.leftId) {
         const dx = clamp((t.clientX - touchZones.leftStart.x) / touchMax, -1, 1);
@@ -1108,6 +1109,9 @@ function setupUI() {
     setLevel(Number.isFinite(chosenLevel) ? chosenLevel : 0);
     setPanel(menuPanel, false);
     if (!touchState.enabled) canvas.requestPointerLock();
+    if (screen.orientation?.lock) {
+      screen.orientation.lock("landscape").catch(() => {});
+    }
     gsap.fromTo("#topHud, #bottomHud", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.5 });
     addFeed("Round live. Hold angles, burst fire, survive.", "#e7bc71");
     addFeed("A broken heart became your battlefield.", "#f09a9d");
