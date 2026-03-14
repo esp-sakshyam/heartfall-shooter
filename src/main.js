@@ -31,6 +31,10 @@ const shootBtn = document.getElementById("shootBtn");
 const jumpBtn = document.getElementById("jumpBtn");
 const reloadBtn = document.getElementById("reloadBtn");
 const driveBtn = document.getElementById("driveBtn");
+const carLeftBtn = document.getElementById("carLeftBtn");
+const carRightBtn = document.getElementById("carRightBtn");
+const carGasBtn = document.getElementById("carGasBtn");
+const carBrakeBtn = document.getElementById("carBrakeBtn");
 const hpEl = document.getElementById("hp");
 const armorEl = document.getElementById("armor");
 const ammoEl = document.getElementById("ammo");
@@ -212,6 +216,7 @@ const player = {
   sensitivity: 1.2,
   thirdPerson: false,
   driving: false,
+  thirdPersonBeforeDrive: false,
   step: 0
 };
 
@@ -234,7 +239,11 @@ const touchState = {
   lookX: 0,
   lookY: 0,
   firing: false,
-  jumping: false
+  jumping: false,
+  driveLeft: false,
+  driveRight: false,
+  driveGas: false,
+  driveBrake: false
 };
 
 const gyroState = {
@@ -304,13 +313,14 @@ function randomSpawnAround(center, radius) {
 
 function buildNepalMissionWaves(levelConfig) {
   const cfg = levelConfig ?? levelDefs[Math.min(game.levelIndex, levelDefs.length - 1)] ?? levelDefs[0];
+  const mobileLike = game.quality === "mobile" || touchState.enabled;
   const base = Math.max(6, Math.round(cfg.botCount * Math.max(0.72, game.botMultiplier)));
   return [
     {
       id: "himalaya",
       name: "Himalaya Ridge Wave",
       center: new THREE.Vector3(-360, 1.5, -420),
-      spawnRadius: 95,
+      spawnRadius: mobileLike ? 70 : 95,
       spawnCount: base + 1,
       requiredKills: base + 1
     },
@@ -318,7 +328,7 @@ function buildNepalMissionWaves(levelConfig) {
       id: "lumbini",
       name: "Lumbini Wave",
       center: new THREE.Vector3(-140, 1.5, 170),
-      spawnRadius: 88,
+      spawnRadius: mobileLike ? 64 : 88,
       spawnCount: base + 2,
       requiredKills: base + 2
     },
@@ -326,7 +336,7 @@ function buildNepalMissionWaves(levelConfig) {
       id: "flag",
       name: "Flag Plaza Wave",
       center: new THREE.Vector3(140, 1.5, -160),
-      spawnRadius: 84,
+      spawnRadius: mobileLike ? 60 : 84,
       spawnCount: base + 3,
       requiredKills: base + 3
     }
@@ -367,12 +377,42 @@ function startNepalWave(levelConfig, waveIndex, intermission = 0) {
 
   addFeed(`${wave.name} started`, "#ffd38a");
   addFeed(`Objective: eliminate ${wave.requiredKills} hostiles`, "#9be0ff");
+
+  const waveDistance = player.pos.distanceTo(wave.center);
+  if (!player.driving && waveDistance > 320) {
+    player.pos.set(wave.center.x + 24, 1.75, wave.center.z + 24);
+    player.velocity.set(0, 0, 0);
+    addFeed(`Deployment shifted closer to ${wave.name}`, "#9be0ff");
+  }
+
+  if (touchState.enabled) {
+    addFeed(`Mobile spawn locked: ${wave.name}`, "#9be0ff");
+  }
 }
 
 function updateNepalMission(dt, levelConfig) {
   if (world.map !== "nepal" || !world.nepalMission || world.nepalMission.complete) return;
 
-  if (world.nepalMission.activeWaveIndex >= 0) return;
+  if (world.nepalMission.activeWaveIndex >= 0) {
+    const activeWave = world.nepalMission.waves[world.nepalMission.activeWaveIndex];
+    if (!activeWave) return;
+
+    const aliveInWave = world.bots.filter((b) => b.hp > 0 && b.waveId === activeWave.id).length;
+    const remaining = world.nepalMission.requiredInWave - world.nepalMission.killsInWave;
+    if (aliveInWave === 0 && remaining > 0) {
+      spawnBots(remaining, levelConfig, {
+        clearExisting: false,
+        spawnCenter: activeWave.center,
+        spawnRadius: Math.max(40, activeWave.spawnRadius * 0.7),
+        patrolCenter: activeWave.center,
+        patrolRadius: activeWave.spawnRadius,
+        waveId: activeWave.id,
+        canRespawn: false
+      });
+      addFeed(`${activeWave.name}: reinforcements deployed`, "#ffd38a");
+    }
+    return;
+  }
 
   world.nepalMission.intermission = Math.max(0, world.nepalMission.intermission - dt);
   if (world.nepalMission.intermission > 0) return;
@@ -1683,9 +1723,16 @@ function toggleNepalCarDrive() {
 
   if (player.driving) {
     player.driving = false;
+    player.thirdPerson = player.thirdPersonBeforeDrive;
+    touchState.driveLeft = false;
+    touchState.driveRight = false;
+    touchState.driveGas = false;
+    touchState.driveBrake = false;
     const exit = car.exitOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), car.yaw);
     player.pos.copy(car.group.position).add(exit).setY(1.75);
     player.velocity.set(0, 0, 0);
+    setDrivingTouchUi(false);
+    modeEl.textContent = `${player.thirdPerson ? "Third" : "First"} Person Tactical`;
     addFeed("Exited supercar", "#9be0ff");
     return;
   }
@@ -1696,9 +1743,11 @@ function toggleNepalCarDrive() {
   }
 
   player.driving = true;
+  player.thirdPersonBeforeDrive = player.thirdPerson;
   player.thirdPerson = true;
   player.velocity.set(0, 0, 0);
   player.pos.copy(seatPos);
+  setDrivingTouchUi(touchState.enabled);
   addFeed("Driving mode engaged", "#9dffb8");
 }
 
@@ -1932,7 +1981,35 @@ function hideLevelComplete() {
 }
 
 function shouldUseTouch() {
-  return touchState.force || ("ontouchstart" in window && window.innerWidth < 1100);
+  const hasTouch = (navigator.maxTouchPoints ?? 0) > 0 || "ontouchstart" in window;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  if (!hasTouch || !coarsePointer) return false;
+  return touchState.force || window.innerWidth < 1100;
+}
+
+function isLikelyMobileDevice() {
+  const hasTouch = (navigator.maxTouchPoints ?? 0) > 0 || "ontouchstart" in window;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  const smallViewport = Math.max(window.innerWidth, window.innerHeight) <= 1200;
+  return hasTouch && coarsePointer && smallViewport;
+}
+
+function applyDevicePresetDefaults() {
+  const mobile = isLikelyMobileDevice();
+  qualityInput.value = mobile ? "mobile" : "high";
+  touchInput.checked = mobile;
+  if (!mobile) {
+    gyroInput.checked = false;
+  }
+  resolutionInput.value = mobile ? "0.78" : "0.65";
+  resLabel.textContent = `${Number(resolutionInput.value).toFixed(2)}x`;
+}
+
+function setDrivingTouchUi(active) {
+  touchControls?.classList.toggle("driving", !!active);
+  if (driveBtn) {
+    driveBtn.textContent = active ? "EXIT" : "DRIVE";
+  }
 }
 
 function rebuildWorld(mapId, weatherId) {
@@ -1973,7 +2050,7 @@ function rebuildWorld(mapId, weatherId) {
     world.pickupZ = 280;
   } else if (mapId === "nepal") {
     buildNepalWorld();
-    player.spawn.set(0, 1.75, 120);
+    player.spawn.set(-336, 1.75, -396);
     world.boundsX = 620;
     world.boundsZ = 640;
     world.botSpawnX = 360;
@@ -2006,6 +2083,7 @@ function rebuildWorld(mapId, weatherId) {
     player.pos.copy(player.spawn);
     player.velocity.set(0, 0, 0);
     player.driving = false;
+    player.thirdPersonBeforeDrive = player.thirdPerson;
   }
 }
 
@@ -2056,6 +2134,7 @@ function applySettings() {
 
   touchControls.classList.toggle("hidden", !touchState.enabled);
   touchControls.classList.toggle("split", touchState.enabled);
+  setDrivingTouchUi(player.driving && touchState.enabled);
 
   const chosenLevel = Number(difficultyInput?.value ?? game.levelIndex);
   const nextLevel = Number.isFinite(chosenLevel) ? chosenLevel : 0;
@@ -2190,7 +2269,7 @@ function setupInput() {
     if (e.code === "KeyM" && game.started) {
       modMenuEl?.classList.toggle("hidden");
     }
-    if (e.code === "KeyV") {
+    if (e.code === "KeyV" && !player.driving) {
       player.thirdPerson = !player.thirdPerson;
       modeEl.textContent = `${player.thirdPerson ? "Third" : "First"} Person Tactical`;
     }
@@ -2373,6 +2452,29 @@ function setupInput() {
       toggleNepalCarDrive();
     }
   });
+
+  function bindCarHoldButton(el, prop) {
+    if (!el) return;
+    const on = (e) => {
+      e.preventDefault();
+      touchState[prop] = true;
+    };
+    const off = (e) => {
+      e.preventDefault();
+      touchState[prop] = false;
+    };
+    el.addEventListener("touchstart", on, { passive: false });
+    el.addEventListener("touchend", off, { passive: false });
+    el.addEventListener("touchcancel", off, { passive: false });
+    el.addEventListener("mousedown", on);
+    el.addEventListener("mouseup", off);
+    el.addEventListener("mouseleave", off);
+  }
+
+  bindCarHoldButton(carLeftBtn, "driveLeft");
+  bindCarHoldButton(carRightBtn, "driveRight");
+  bindCarHoldButton(carGasBtn, "driveGas");
+  bindCarHoldButton(carBrakeBtn, "driveBrake");
 
   shootBtn.addEventListener("mousedown", () => {
     keys.fire = true;
@@ -2800,12 +2902,15 @@ function updatePlayer(dt) {
 
   if (player.driving && (!world.nepalCar?.group || world.map !== "nepal")) {
     player.driving = false;
+    setDrivingTouchUi(false);
   }
 
   if (player.driving && world.nepalCar?.group) {
     const car = world.nepalCar;
-    const throttle = clamp(-moveZ, -1, 1);
-    const steerInput = clamp(-moveX, -1, 1);
+    const touchThrottle = (touchState.driveGas ? 1 : 0) - (touchState.driveBrake ? 1 : 0);
+    const touchSteer = (touchState.driveRight ? 1 : 0) - (touchState.driveLeft ? 1 : 0);
+    const throttle = clamp(-moveZ + touchThrottle, -1, 1);
+    const steerInput = clamp(-moveX + touchSteer, -1, 1);
     const targetSpeed = throttle * car.maxSpeed;
     const accel = Math.abs(targetSpeed) > Math.abs(car.speed) ? car.accel : car.brake;
     car.speed = lerp(car.speed, targetSpeed, clamp(dt * accel * 0.12, 0, 1));
@@ -2833,6 +2938,7 @@ function updatePlayer(dt) {
     player.velocity.set(0, 0, 0);
     player.grounded = true;
     modeEl.textContent = "Vehicle Mode: Supercar";
+    setDrivingTouchUi(touchState.enabled);
 
     if (keys.reload) keys.reload = false;
     player.weaponCooldown = Math.max(0, player.weaponCooldown - dt);
@@ -2845,7 +2951,7 @@ function updatePlayer(dt) {
   if (local.lengthSq() > 1) local.normalize();
 
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
-  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
   const moveDir = forward.clone().multiplyScalar(local.z).add(right.multiplyScalar(local.x));
   if (moveDir.lengthSq() > 0.0001) moveDir.normalize();
 
@@ -3336,8 +3442,9 @@ function animate() {
   if (game.usePost) {
     const lookDir = new THREE.Vector3();
     camera.getWorldDirection(lookDir);
-    const aimingSky = lookDir.y > 0.46;
-    ssaoPass.enabled = game.ssaoWanted && !aimingSky;
+    const aimingSky = lookDir.y > 0.1;
+    const firstPerson = !player.thirdPerson;
+    ssaoPass.enabled = game.ssaoWanted && !aimingSky && !firstPerson;
   }
 
   if (game.usePost) {
@@ -3348,6 +3455,7 @@ function animate() {
 }
 
 function init() {
+  applyDevicePresetDefaults();
   applyWorldSelection(true);
   createPlayerBody();
   setupInput();

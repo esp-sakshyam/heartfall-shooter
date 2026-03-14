@@ -585,6 +585,58 @@ button:hover  { filter: brightness(1.12); }
   letter-spacing: 1px;
 }
 
+.car-btn {
+  display: none;
+}
+
+#touchControls.driving .car-btn {
+  display: flex;
+}
+
+#touchControls.driving .fire,
+#touchControls.driving .jump,
+#touchControls.driving .reload {
+  opacity: 0.28;
+}
+
+.touch-btn.car-left {
+  left: 22px;
+  bottom: 156px;
+  width: 68px;
+  height: 68px;
+  background: rgba(28, 39, 66, 0.9);
+}
+
+.touch-btn.car-right {
+  left: 98px;
+  bottom: 156px;
+  width: 68px;
+  height: 68px;
+  background: rgba(28, 39, 66, 0.9);
+}
+
+.touch-btn.car-gas {
+  right: 20px;
+  bottom: 150px;
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  background: rgba(18, 78, 44, 0.92);
+  color: #d7ffe7;
+  font-size: 13px;
+}
+
+.touch-btn.car-brake {
+  right: 112px;
+  bottom: 150px;
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  background: rgba(104, 34, 24, 0.92);
+  color: #ffe4d9;
+  font-size: 12px;
+}
+
 .mod-toggle {
   position: absolute;
   top: 92px;
