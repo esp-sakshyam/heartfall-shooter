@@ -31,7 +31,7 @@ html, body {
   font-family: "Space Grotesk", sans-serif;
   color: var(--ink);
   background: var(--bg-0);
-  touch-action: none;
+  touch-action: auto;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -292,6 +292,9 @@ html, body {
   width: min(580px, calc(100vw - 24px));
   max-height: 90vh;
   overflow-y: auto;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   border-radius: 18px;
   border: 1px solid var(--border2);
   background: linear-gradient(145deg, rgba(8,14,22,0.96), rgba(18,30,44,0.94));

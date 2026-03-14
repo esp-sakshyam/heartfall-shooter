@@ -2340,7 +2340,7 @@ function setupInput() {
   }
 
   window.addEventListener("touchstart", (e) => {
-    if (!touchState.enabled) return;
+    if (!touchState.enabled || game.paused) return;
     const half = window.innerWidth / 2;
     for (const t of e.changedTouches) {
       if (t.clientX < half && touchZones.leftId === null) {
@@ -2356,7 +2356,7 @@ function setupInput() {
   }, { passive: false });
 
   window.addEventListener("touchmove", (e) => {
-    if (!touchState.enabled) return;
+    if (!touchState.enabled || game.paused) return;
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === touchZones.leftId) {
@@ -2375,9 +2375,11 @@ function setupInput() {
   }, { passive: false });
 
   window.addEventListener("touchend", (e) => {
+    if (game.paused) return;
     for (const t of e.changedTouches) resetTouchZone(t.identifier);
   });
   window.addEventListener("touchcancel", (e) => {
+    if (game.paused) return;
     for (const t of e.changedTouches) resetTouchZone(t.identifier);
   });
 
