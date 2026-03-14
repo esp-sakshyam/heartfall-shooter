@@ -365,29 +365,25 @@ function startNepalWave(levelConfig, waveIndex, intermission = 0) {
   world.nepalMission.requiredInWave = wave.requiredKills;
   world.nepalMission.intermission = intermission;
 
+  const waveDistance = player.pos.distanceTo(wave.center);
+  const spawnCenter = waveDistance > 260 ? player.pos.clone() : wave.center.clone();
+  const spawnRadius = waveDistance > 260 ? Math.max(34, wave.spawnRadius * 0.52) : wave.spawnRadius;
+
   spawnBots(wave.spawnCount, levelConfig, {
     clearExisting: true,
-    spawnCenter: wave.center,
-    spawnRadius: wave.spawnRadius,
-    patrolCenter: wave.center,
+    spawnCenter,
+    spawnRadius,
+    patrolCenter: spawnCenter,
     patrolRadius: wave.spawnRadius * 1.15,
     waveId: wave.id,
     canRespawn: false
   });
 
   addFeed(`${wave.name} started`, "#ffd38a");
+  if (waveDistance > 260) {
+    addFeed(`${wave.name}: enemies pushed to your sector`, "#9be0ff");
+  }
   addFeed(`Objective: eliminate ${wave.requiredKills} hostiles`, "#9be0ff");
-
-  const waveDistance = player.pos.distanceTo(wave.center);
-  if (!player.driving && waveDistance > 320) {
-    player.pos.set(wave.center.x + 24, 1.75, wave.center.z + 24);
-    player.velocity.set(0, 0, 0);
-    addFeed(`Deployment shifted closer to ${wave.name}`, "#9be0ff");
-  }
-
-  if (touchState.enabled) {
-    addFeed(`Mobile spawn locked: ${wave.name}`, "#9be0ff");
-  }
 }
 
 function updateNepalMission(dt, levelConfig) {
@@ -400,11 +396,13 @@ function updateNepalMission(dt, levelConfig) {
     const aliveInWave = world.bots.filter((b) => b.hp > 0 && b.waveId === activeWave.id).length;
     const remaining = world.nepalMission.requiredInWave - world.nepalMission.killsInWave;
     if (aliveInWave === 0 && remaining > 0) {
+      const distToWave = player.pos.distanceTo(activeWave.center);
+      const spawnCenter = distToWave > 260 ? player.pos.clone() : activeWave.center.clone();
       spawnBots(remaining, levelConfig, {
         clearExisting: false,
-        spawnCenter: activeWave.center,
-        spawnRadius: Math.max(40, activeWave.spawnRadius * 0.7),
-        patrolCenter: activeWave.center,
+        spawnCenter,
+        spawnRadius: Math.max(34, activeWave.spawnRadius * 0.7),
+        patrolCenter: spawnCenter,
         patrolRadius: activeWave.spawnRadius,
         waveId: activeWave.id,
         canRespawn: false
@@ -737,7 +735,7 @@ function createSkyAndLights(weather = "clear") {
       exponent: { value: 0.55 }
     },
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main(){ float h = normalize(vWorldPosition + offset).y; gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h,0.0), exponent),0.0)), 1.0); }`
+    fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main(){ float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y; gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h,0.0), exponent),0.0)), 1.0); }`
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
   envGroup.add(sky);
@@ -1364,11 +1362,18 @@ function buildNepalVibes() {
     }
   }
 
-  const fogLayers = 16;
+  const fogLayers = 10;
   for (let i = 0; i < fogLayers; i += 1) {
     const fogPatch = new THREE.Mesh(
       new THREE.PlaneGeometry(120 + Math.random() * 80, 40 + Math.random() * 18),
-      new THREE.MeshBasicMaterial({ color: 0xdce7ef, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide })
+      new THREE.MeshBasicMaterial({
+        color: 0xf1f7ff,
+        transparent: true,
+        opacity: 0.035,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide
+      })
     );
     fogPatch.position.set(randCentered(700), 28 + Math.random() * 34, randCentered(760));
     fogPatch.rotation.y = Math.random() * Math.PI;
@@ -2050,7 +2055,7 @@ function rebuildWorld(mapId, weatherId) {
     world.pickupZ = 280;
   } else if (mapId === "nepal") {
     buildNepalWorld();
-    player.spawn.set(-336, 1.75, -396);
+    player.spawn.set(0, 1.75, -80);
     world.boundsX = 620;
     world.boundsZ = 640;
     world.botSpawnX = 360;
@@ -2114,8 +2119,8 @@ function applySettings() {
 
   if (world.sunLight) world.sunLight.shadow.mapSize.set(p.shadowMap, p.shadowMap);
 
-  game.ssaoWanted = p.ssao && game.usePost;
-  ssaoPass.enabled = game.ssaoWanted;
+  game.ssaoWanted = false;
+  ssaoPass.enabled = false;
   bloomPass.enabled = p.bloom && bloomInput.checked && game.usePost;
   smaaPass.enabled = game.usePost;
 
@@ -2860,7 +2865,7 @@ function updatePlayer(dt) {
     const dz = 0.08;
     const mx = Math.abs(touchState.moveX) < dz ? 0 : touchState.moveX;
     const my = Math.abs(touchState.moveY) < dz ? 0 : touchState.moveY;
-    moveX -= mx;
+    moveX += mx;
     moveZ -= my;
     lookX += touchState.lookX * 2.1;
     lookY -= touchState.lookY * 2.1;
@@ -2908,7 +2913,7 @@ function updatePlayer(dt) {
   if (player.driving && world.nepalCar?.group) {
     const car = world.nepalCar;
     const touchThrottle = (touchState.driveGas ? 1 : 0) - (touchState.driveBrake ? 1 : 0);
-    const touchSteer = (touchState.driveRight ? 1 : 0) - (touchState.driveLeft ? 1 : 0);
+    const touchSteer = (touchState.driveLeft ? 1 : 0) - (touchState.driveRight ? 1 : 0);
     const throttle = clamp(-moveZ + touchThrottle, -1, 1);
     const steerInput = clamp(-moveX + touchSteer, -1, 1);
     const targetSpeed = throttle * car.maxSpeed;
@@ -3224,7 +3229,7 @@ function updateVFX(dt) {
     for (const fp of world.nepalFogPatches) {
       fp.fogPatch.position.x = fp.baseX + Math.sin(t * 0.15 + fp.phase) * 6;
       fp.fogPatch.position.z = fp.baseZ + Math.cos(t * 0.15 + fp.phase) * 5;
-      fp.fogPatch.material.opacity = 0.06 + Math.sin(t * 0.6 + fp.phase) * 0.018;
+      fp.fogPatch.material.opacity = 0.024 + Math.sin(t * 0.6 + fp.phase) * 0.01;
     }
 
     for (const marker of world.nepalMarkers) {
@@ -3440,11 +3445,7 @@ function animate() {
   }
 
   if (game.usePost) {
-    const lookDir = new THREE.Vector3();
-    camera.getWorldDirection(lookDir);
-    const aimingSky = lookDir.y > 0.1;
-    const firstPerson = !player.thirdPerson;
-    ssaoPass.enabled = game.ssaoWanted && !aimingSky && !firstPerson;
+    ssaoPass.enabled = false;
   }
 
   if (game.usePost) {

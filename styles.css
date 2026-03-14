@@ -59,7 +59,8 @@ html, body {
 .vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 56%, rgba(0,0,0,0.36) 100%);
+  background: none;
+  opacity: 0;
   pointer-events: none;
   z-index: 0;
   transition: opacity 0.3s;
